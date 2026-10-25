@@ -31,6 +31,10 @@ on:
         description: "SDK channel: release or dev"
         required: false
         default: "release"
+      versions:
+        description: "Archived versions, e.g. official=1.3.4,momentum=mntm-010 (missing = latest)"
+        required: false
+        default: ""
       request_id:
         description: "Unique id set by the web page to find this run"
         required: true
@@ -56,6 +60,7 @@ jobs:
           IN_DIR: ${{ inputs.app_dir }}
           IN_FW: ${{ inputs.firmwares }}
           IN_CHANNEL: ${{ inputs.channel }}
+          IN_VERSIONS: ${{ inputs.versions }}
           IN_ID: ${{ inputs.request_id }}
         run: |
           python3 - <<'EOF'
@@ -84,25 +89,45 @@ jobs:
           if channel not in ("release", "dev"):
               fail("Channel must be release or dev")
 
+          # Every SDK comes from the firmware's own official distribution:
+          # latest via its update-server index, archived versions via its build archive.
           sdks = {
-              "official": ("Official", ""),
-              "momentum": ("Momentum", "https://up.momentum-fw.dev/firmware/directory.json"),
-              "unleashed": ("Unleashed", "https://up.unleashedflip.com/directory.json"),
+              "official": ("Official", "", r"\d+\.\d+\.\d+(-rc)?",
+                           "https://update.flipperzero.one/builds/firmware/{v}/flipper-z-f7-sdk-{v}.zip"),
+              "momentum": ("Momentum", "https://up.momentum-fw.dev/firmware/directory.json", r"mntm-\d{3}",
+                           "https://up.momentum-fw.dev/builds/firmware/{v}/flipper-z-f7-sdk-{v}.zip"),
+              "unleashed": ("Unleashed", "https://up.unleashedflip.com/directory.json", r"unlshd-\d{3}[a-z]?",
+                            "https://github.com/DarkFlippers/unleashed-firmware/releases/download/{v}/flipper-z-f7-sdk-{v}.zip"),
           }
           wanted = [f.strip().lower() for f in os.environ["IN_FW"].split(",") if f.strip()]
           bad = [f for f in wanted if f not in sdks]
           if bad or not wanted:
               fail(f"Unknown firmware: {', '.join(bad) or '(none)'}")
 
-          include = [
-              {"fw": f, "label": sdks[f][0], "index_url": sdks[f][1], "channel": channel,
-               "ref": ref, "app_dir": app_dir}
-              for f in dict.fromkeys(wanted)
-          ]
+          versions = {}
+          for item in filter(None, (x.strip() for x in os.environ["IN_VERSIONS"].split(","))):
+              fw, _, ver = item.partition("=")
+              fw, ver = fw.strip().lower(), ver.strip()
+              if fw not in sdks:
+                  fail(f"Unknown firmware in versions: {fw}")
+              if ver and ver.lower() != "latest":
+                  if not re.fullmatch(sdks[fw][2], ver):
+                      fail(f"Invalid {sdks[fw][0]} version: {ver}")
+                  versions[fw] = ver
+
+          include = []
+          for f in dict.fromkeys(wanted):
+              label, index_url, _, archive = sdks[f]
+              ver = versions.get(f, "")
+              include.append({
+                  "fw": f, "label": label, "index_url": index_url, "channel": channel,
+                  "version": ver or "latest", "sdk_url": archive.format(v=ver) if ver else "",
+                  "ref": ref, "app_dir": app_dir,
+              })
           with open(os.environ["GITHUB_OUTPUT"], "a") as out:
               out.write(f"repo={repo}\n")
               out.write("matrix=" + json.dumps({"include": include}) + "\n")
-          print(f"repo={repo} ref={ref or '(default)'} dir={app_dir or '(root)'} fw={wanted}")
+          print(f"repo={repo} ref={ref or '(default)'} dir={app_dir or '(root)'} fw={wanted} versions={versions or 'latest'}")
           EOF
 
   build:
@@ -125,8 +150,16 @@ jobs:
           submodules: recursive
           persist-credentials: false
 
+      - name: Build (archived SDK ${{ matrix.version }})
+        if: matrix.sdk_url != ''
+        id: archived
+        uses: flipperdevices/flipperzero-ufbt-action@v0.1
+        with:
+          app-dir: src/${{ matrix.app_dir }}
+          sdk-url: ${{ matrix.sdk_url }}
+
       - name: Build (official SDK)
-        if: matrix.index_url == ''
+        if: matrix.sdk_url == '' && matrix.index_url == ''
         id: official
         uses: flipperdevices/flipperzero-ufbt-action@v0.1
         with:
@@ -134,7 +167,7 @@ jobs:
           sdk-channel: ${{ matrix.channel }}
 
       - name: Build (custom firmware SDK)
-        if: matrix.index_url != ''
+        if: matrix.sdk_url == '' && matrix.index_url != ''
         id: custom
         uses: flipperdevices/flipperzero-ufbt-action@v0.1
         with:
@@ -144,13 +177,14 @@ jobs:
 
       - name: Collect .fap files
         env:
-          FAPS: ${{ steps.official.outputs.fap-artifacts || steps.custom.outputs.fap-artifacts }}
+          FAPS: ${{ steps.archived.outputs.fap-artifacts || steps.official.outputs.fap-artifacts || steps.custom.outputs.fap-artifacts }}
           FW: ${{ matrix.fw }}
+          VER: ${{ matrix.version }}
         run: |
           mkdir -p out
           for f in $FAPS; do
             base="$(basename "$f" .fap)"
-            cp "$f" "out/${base}-${FW}.fap"
+            cp "$f" "out/${base}-${FW}-${VER}.fap"
           done
           ls -la out
           test -n "$(ls out)"

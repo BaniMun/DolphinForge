@@ -45,6 +45,18 @@ class FakeGitHub:
                 "access-control-allow-origin": "*",
                 "access-control-allow-headers": "*",
                 "access-control-allow-methods": "GET,POST"})
+        releases = {
+            "/repos/flipperdevices/flipperzero-firmware/releases": [
+                {"tag_name": "1.5.1"}, {"tag_name": "1.5.1-rc", "prerelease": True}, {"tag_name": "1.4.3"}],
+            "/repos/Next-Flip/Momentum-Firmware/releases": [
+                {"tag_name": "mntm-012"}, {"tag_name": "mntm-011"}, {"tag_name": "mntm-010"}],
+            "/repos/DarkFlippers/unleashed-firmware/releases": [
+                {"tag_name": "unlshd-094"}, {"tag_name": "unlshd-093"}, {"tag_name": "nightly", "draft": True}],
+        }
+        if path in releases:
+            if auth and auth != "Bearer good-token":
+                return reply({"message": "Bad credentials"}, 401)
+            return reply(releases[path])
         if auth != "Bearer good-token":
             return reply({"message": "Bad credentials"}, 401)
         if path == "/repos/me/builder":
@@ -102,12 +114,21 @@ with sync_playwright() as p:
     check("settings open when empty", page.locator("#setupDetails").get_attribute("open") is not None)
     page.fill("#repo", "owner/app")
     page.click("#buildBtn")
-    check("asks for settings first", "ustawienia" in page.inner_text("#formMsg"))
+    check("asks for settings first", "Settings" in page.inner_text("#formMsg"))
+    page.wait_for_function("document.querySelector('.fw-ver[data-fw=momentum]').options.length > 1")
+    opts = page.eval_on_selector_all(".fw-ver[data-fw=official] option", "els => els.map(e => e.textContent)")
+    check("official latest from releases", opts == ["Latest (1.5.1)", "1.4.3"])
+    uopts = page.eval_on_selector_all(".fw-ver[data-fw=unleashed] option", "els => els.map(e => e.textContent)")
+    check("drafts/prereleases skipped", uopts == ["Latest (unlshd-094)", "unlshd-093"])
+    page.select_option("#channel", "dev")
+    check("dev disables versions", page.is_disabled(".fw-ver[data-fw=momentum]"))
+    page.select_option("#channel", "release")
+    page.select_option(".fw-ver[data-fw=momentum]", "mntm-010")
 
     page.fill("#builderRepo", "https://github.com/me/builder/")
     page.fill("#token", "good-token")
     page.click("#saveSettings")
-    check("settings saved", page.inner_text("#settingsState") == "Zapisane")
+    check("settings saved", page.inner_text("#settingsState") == "Saved")
 
     page.fill("#repo", "https://github.com/owner/app/tree/dev/apps/cfs")
     page.click("#buildBtn")
@@ -118,13 +139,15 @@ with sync_playwright() as p:
     check("tree link split into repo/ref/dir",
           (inp["repo"], inp["ref"], inp["app_dir"]) == ("owner/app", "dev", "apps/cfs"))
     check("all three firmwares requested", inp["firmwares"] == "official,momentum,unleashed")
+    check("archived version sent", inp["versions"] == "momentum=mntm-010")
+    check("version shown in status", "mntm-010" in page.inner_text("#statusRows"))
     check("request id format", re.fullmatch(r"[a-z0-9]+-[a-z0-9]+", inp["request_id"]) is not None)
     files = page.locator("#files a.file")
     check("only .fap files listed", files.count() == 2)
     check("download link", files.first.get_attribute("href") == "https://dl/o.fap")
     rows = page.inner_text("#statusRows")
-    check("official done", "Official" in rows and "gotowe" in rows)
-    check("momentum error shown", "błąd" in rows and "unknown type <Foo>" in rows)
+    check("official done", "Official" in rows and "done" in rows)
+    check("momentum error shown", "failed" in rows and "unknown type <Foo>" in rows)
     check("error text escaped", "<Foo>" not in page.inner_html("#statusRows"))
     check("history shows partial", "◐" in page.inner_text("#history"))
     check("run link", page.locator("#runLink a").get_attribute("href") == "https://gh/run/77")
@@ -150,7 +173,7 @@ with sync_playwright() as p:
     page.fill("#repo", "owner/app")
     page.click("#buildBtn")
     page.wait_for_function("!document.getElementById('formMsg').hidden")
-    check("bad token message", "Token jest nieprawidłowy" in page.inner_text("#formMsg"))
+    check("bad token message", "token is invalid" in page.inner_text("#formMsg"))
     ctx.close()
 
     # --- input validation in the page ---
@@ -163,7 +186,7 @@ with sync_playwright() as p:
     page.click("#saveSettings")
     page.fill("#repo", "not a repo")
     page.click("#buildBtn")
-    check("rejects garbage repo", "owner/nazwa" in page.inner_text("#formMsg"))
+    check("rejects garbage repo", "owner/name" in page.inner_text("#formMsg"))
     for box in page.locator("#fwChips input").all():
         box.uncheck()
     page.fill("#repo", "owner/app")

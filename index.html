@@ -1,10 +1,10 @@
 <!doctype html>
-<html lang="pl">
+<html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>DolphinForge</title>
-<meta name="description" content="Kompilator aplikacji .fap dla Flipper Zero: Official, Momentum, Unleashed.">
+<meta name="description" content="Build Flipper Zero .fap apps for Official, Momentum and Unleashed firmware.">
 <style>
   :root {
     --bg: #111214;
@@ -51,6 +51,11 @@
   }
   .chip input:checked + span { border-color: var(--accent); color: var(--text); background: #2a1d10; }
   .chip input:focus-visible + span { outline: 2px solid var(--accent); }
+  .fw-list { display: grid; gap: 8px; }
+  .fw-row { display: grid; grid-template-columns: 130px 1fr; gap: 10px; align-items: center; }
+  .fw-row .chip span { width: 100%; text-align: center; }
+  .fw-row select { padding: 8px 10px; }
+  .fw-row select:disabled { opacity: .5; }
   button {
     font: inherit; border-radius: 8px; border: 1px solid var(--line); background: var(--panel-2);
     color: var(--text); padding: 10px 14px; cursor: pointer;
@@ -99,44 +104,54 @@
 
   <section id="setup">
     <details id="setupDetails">
-      <summary>Ustawienia</summary>
-      <label for="builderRepo">Repo z kompilatorem (Twoje)</label>
+      <summary>Settings</summary>
+      <label for="builderRepo">Your DolphinForge repo</label>
       <input type="text" id="builderRepo" placeholder="login/DolphinForge" autocomplete="off" spellcheck="false">
       <label for="token">Token GitHub</label>
       <input type="password" id="token" placeholder="github_pat_..." autocomplete="off" spellcheck="false">
-      <div class="hint">Fine-grained token tylko do repo kompilatora: <b>Actions: Read and write</b>, <b>Contents: Read-only</b>. Zostaje wyłącznie w tej przeglądarce.</div>
-      <button id="saveSettings" type="button" style="margin-top:12px">Zapisz</button>
+      <div class="hint">Fine-grained token for this repo only: <b>Actions: Read and write</b>, <b>Contents: Read-only</b>. It is stored only in this browser.</div>
+      <button id="saveSettings" type="button" style="margin-top:12px">Save</button>
       <span id="settingsState" class="muted" style="margin-left:8px"></span>
     </details>
   </section>
 
   <section>
-    <h2>Nowy build</h2>
+    <h2>New build</h2>
     <form id="buildForm" autocomplete="off">
-      <label for="repo">Repozytorium aplikacji</label>
-      <input type="text" id="repo" placeholder="https://github.com/owner/app albo owner/app" required spellcheck="false">
+      <label for="repo">App repository</label>
+      <input type="text" id="repo" placeholder="https://github.com/owner/app or owner/app" required spellcheck="false">
       <div class="row">
         <div>
-          <label for="ref">Gałąź / tag</label>
-          <input type="text" id="ref" placeholder="domyślna" spellcheck="false">
+          <label for="ref">Branch / tag</label>
+          <input type="text" id="ref" placeholder="default" spellcheck="false">
         </div>
         <div>
-          <label for="appDir">Folder z application.fam</label>
-          <input type="text" id="appDir" placeholder="główny folder" spellcheck="false">
+          <label for="appDir">Folder with application.fam</label>
+          <input type="text" id="appDir" placeholder="repo root" spellcheck="false">
         </div>
       </div>
       <label>Firmware</label>
-      <div class="chips" id="fwChips">
-        <label class="chip"><input type="checkbox" value="official" checked><span>Official</span></label>
-        <label class="chip"><input type="checkbox" value="momentum" checked><span>Momentum</span></label>
-        <label class="chip"><input type="checkbox" value="unleashed" checked><span>Unleashed</span></label>
+      <div class="fw-list" id="fwChips">
+        <div class="fw-row">
+          <label class="chip"><input type="checkbox" value="official" checked><span>Official</span></label>
+          <select class="fw-ver" data-fw="official" aria-label="Official version"><option value="">Latest</option></select>
+        </div>
+        <div class="fw-row">
+          <label class="chip"><input type="checkbox" value="momentum" checked><span>Momentum</span></label>
+          <select class="fw-ver" data-fw="momentum" aria-label="Momentum version"><option value="">Latest</option></select>
+        </div>
+        <div class="fw-row">
+          <label class="chip"><input type="checkbox" value="unleashed" checked><span>Unleashed</span></label>
+          <select class="fw-ver" data-fw="unleashed" aria-label="Unleashed version"><option value="">Latest</option></select>
+        </div>
       </div>
-      <label for="channel">Kanał SDK</label>
+      <div class="hint" id="verHint">Versions come from each firmware's official releases. Pick an older one if your Flipper runs an archived firmware.</div>
+      <label for="channel">SDK channel</label>
       <select id="channel">
-        <option value="release">Release (stabilny)</option>
+        <option value="release">Release (stable)</option>
         <option value="dev">Dev</option>
       </select>
-      <button class="primary" id="buildBtn" type="submit">Kompiluj</button>
+      <button class="primary" id="buildBtn" type="submit">Build</button>
       <div id="formMsg" class="msg" hidden></div>
     </form>
   </section>
@@ -150,7 +165,7 @@
   </section>
 
   <section id="historyBox" hidden>
-    <h2>Ostatnie buildy</h2>
+    <h2>Recent builds</h2>
     <div id="history"></div>
   </section>
 </main>
@@ -192,19 +207,20 @@
     settings.builderRepo = $("builderRepo").value.trim().replace(/^https?:\/\/github\.com\//, "").replace(/\/+$/, "");
     settings.token = $("token").value.trim();
     const ok = store.set("builderRepo", settings.builderRepo) && store.set("token", settings.token);
-    $("settingsState").textContent = ok ? "Zapisane" : "Zapisane tylko do zamknięcia karty";
+    $("settingsState").textContent = ok ? "Saved" : "Saved until this tab is closed";
     defaultBranch = null;
     if (settings.builderRepo && settings.token) setTimeout(() => { $("setupDetails").open = false; }, 600);
   });
 
   // ---------- GitHub API ----------
   async function gh(path, opts = {}) {
+    const useToken = settings.token && !opts.anonymous;
     const res = await fetch(API + path, {
-      ...opts,
+      method: opts.method, body: opts.body,
       headers: {
         Accept: "application/vnd.github+json",
         "X-GitHub-Api-Version": "2022-11-28",
-        ...(settings.token ? { Authorization: "Bearer " + settings.token } : {}),
+        ...(useToken ? { Authorization: "Bearer " + settings.token } : {}),
         ...(opts.body ? { "Content-Type": "application/json" } : {}),
       },
     });
@@ -226,12 +242,59 @@
   }
 
   function explain(err) {
-    if (err.status === 401) return "Token jest nieprawidłowy albo wygasł.";
-    if (err.status === 403) return "Token nie ma uprawnień (Actions: Read and write, Contents: Read-only) albo trafiłeś na limit API.";
-    if (err.status === 404) return "Nie widzę repo kompilatora ani workflow build.yml. Sprawdź nazwę repo i czy token ma do niego dostęp.";
-    if (err.status === 422) return "GitHub odrzucił dane: " + err.message;
+    if (err.status === 401) return "The token is invalid or expired.";
+    if (err.status === 403) return "The token lacks permissions (Actions: Read and write, Contents: Read-only), or the API rate limit was hit.";
+    if (err.status === 404) return "Can't find the DolphinForge repo or its build.yml workflow. Check the repo name and that the token has access to it.";
+    if (err.status === 422) return "GitHub rejected the request: " + err.message;
     return err.message || String(err);
   }
+
+  // ---------- firmware versions (official release lists) ----------
+  const FW_SOURCES = {
+    official: { repo: "flipperdevices/flipperzero-firmware", re: /^\d+\.\d+\.\d+$/ },
+    momentum: { repo: "Next-Flip/Momentum-Firmware", re: /^mntm-\d{3}$/ },
+    unleashed: { repo: "DarkFlippers/unleashed-firmware", re: /^unlshd-\d{3}[a-z]?$/ },
+  };
+  const VERSIONS_TTL = 6 * 3600 * 1000;
+
+  async function fetchVersions(fw) {
+    const path = `/repos/${FW_SOURCES[fw].repo}/releases?per_page=40`;
+    let rel;
+    try { rel = await gh(path); }
+    catch (err) { if (err.status === 401 || err.status === 403) rel = await gh(path, { anonymous: true }); else throw err; }
+    return rel.filter((r) => !r.draft && !r.prerelease && FW_SOURCES[fw].re.test(r.tag_name))
+      .map((r) => r.tag_name).slice(0, 30);
+  }
+
+  function fillVersionSelect(fw, list) {
+    const sel = document.querySelector(`.fw-ver[data-fw="${fw}"]`);
+    const keep = sel.value;
+    sel.innerHTML = `<option value="">${list.length ? "Latest (" + escapeHtml(list[0]) + ")" : "Latest"}</option>` +
+      list.slice(1).map((v) => `<option value="${escapeHtml(v)}">${escapeHtml(v)}</option>`).join("");
+    if (keep && list.includes(keep)) sel.value = keep;
+  }
+
+  async function loadVersions() {
+    const cached = store.get("versions", null);
+    if (cached && Date.now() - cached.ts < VERSIONS_TTL) {
+      Object.entries(cached.data).forEach(([fw, list]) => fillVersionSelect(fw, list));
+      return;
+    }
+    const data = {};
+    let failed = false;
+    await Promise.all(Object.keys(FW_SOURCES).map(async (fw) => {
+      try { data[fw] = await fetchVersions(fw); fillVersionSelect(fw, data[fw]); }
+      catch { failed = true; }
+    }));
+    if (!failed) store.set("versions", { ts: Date.now(), data });
+    else $("verHint").textContent = "Could not load the version lists right now; Latest still works.";
+  }
+
+  function syncChannel() {
+    const dev = $("channel").value === "dev";
+    document.querySelectorAll(".fw-ver").forEach((s) => { s.disabled = dev; });
+  }
+  $("channel").addEventListener("change", syncChannel);
 
   // ---------- form ----------
   const params = new URLSearchParams(location.search);
@@ -258,20 +321,28 @@
     showMsg($("formMsg"), "");
     if (!settings.builderRepo || !settings.token) {
       $("setupDetails").open = true;
-      return showMsg($("formMsg"), "Najpierw uzupełnij i zapisz ustawienia: repo kompilatora i token.");
+      return showMsg($("formMsg"), "Fill in and save Settings first: your DolphinForge repo and a token.");
     }
     const parsed = normRepo($("repo").value);
     if (!/^[A-Za-z0-9-]+\/[A-Za-z0-9._-]+$/.test(parsed.repo)) {
-      return showMsg($("formMsg"), "Podaj repo jako owner/nazwa albo link do GitHuba.");
+      return showMsg($("formMsg"), "Enter the repo as owner/name or a GitHub link.");
     }
     const ref = $("ref").value.trim() || parsed.ref || "";
     const dir = $("appDir").value.trim() || parsed.dir || "";
     const fws = [...document.querySelectorAll("#fwChips input:checked")].map((i) => i.value);
-    if (!fws.length) return showMsg($("formMsg"), "Zaznacz przynajmniej jeden firmware.");
+    if (!fws.length) return showMsg($("formMsg"), "Select at least one firmware.");
 
+    const channel = $("channel").value;
+    const versions = {};
+    if (channel === "release") {
+      fws.forEach((fw) => {
+        const v = document.querySelector(`.fw-ver[data-fw="${fw}"]`).value;
+        if (v) versions[fw] = v;
+      });
+    }
     const requestId = Date.now().toString(36) + "-" + Math.random().toString(36).slice(2, 8);
     const build = {
-      id: requestId, repo: parsed.repo, ref, dir, fws, channel: $("channel").value,
+      id: requestId, repo: parsed.repo, ref, dir, fws, channel, versions,
       started: Date.now(), runId: null, state: "queued",
     };
 
@@ -284,7 +355,9 @@
           ref: branch,
           inputs: {
             repo: build.repo, ref: build.ref, app_dir: build.dir,
-            firmwares: build.fws.join(","), channel: build.channel, request_id: build.id,
+            firmwares: build.fws.join(","), channel: build.channel,
+            versions: Object.entries(build.versions).map(([fw, v]) => `${fw}=${v}`).join(","),
+            request_id: build.id,
           },
         }),
       });
@@ -303,18 +376,23 @@
   function renderRows(build, jobs) {
     const rows = build.fws.map((fw) => {
       const job = jobs.find((j) => j.name === FW_LABELS[fw]);
-      let cls = "", text = "w kolejce";
+      let cls = "", text = "queued";
       if (job) {
         if (job.status === "completed") {
           cls = job.conclusion === "success" ? "ok" : "bad";
-          text = { success: "gotowe", failure: "błąd", cancelled: "anulowane", skipped: "pominięte" }[job.conclusion] || job.conclusion;
-        } else if (job.status === "in_progress") { cls = "run"; text = "kompiluję…"; }
+          text = { success: "done", failure: "failed", cancelled: "cancelled", skipped: "skipped" }[job.conclusion] || job.conclusion;
+        } else if (job.status === "in_progress") { cls = "run"; text = "building…"; }
       }
       const err = job && job._error ? `<div class="err">${escapeHtml(job._error)}</div>` : "";
       const link = job && cls === "bad" ? ` · <a href="${job.html_url}" target="_blank" rel="noopener">log</a>` : "";
-      return `<div><div class="status-row"><span class="dot ${cls}"></span><span class="name">${FW_LABELS[fw]}</span><span class="state">${text}${link}</span></div>${err}</div>`;
+      return `<div><div class="status-row"><span class="dot ${cls}"></span><span class="name">${FW_LABELS[fw]} <span class="muted">${escapeHtml(versionLabel(build, fw))}</span></span><span class="state">${text}${link}</span></div>${err}</div>`;
     });
     $("statusRows").innerHTML = rows.join("");
+  }
+
+  function versionLabel(build, fw) {
+    if (build.channel === "dev") return "dev";
+    return (build.versions && build.versions[fw]) || "latest";
   }
 
   function escapeHtml(s) {
@@ -328,7 +406,7 @@
       if (run) return run;
       await sleep(3000);
     }
-    throw new Error("GitHub nie uruchomił builda w ciągu 90 s. Sprawdź zakładkę Actions w repo kompilatora.");
+    throw new Error("GitHub did not start the build within 90 s. Check the Actions tab of your DolphinForge repo.");
   }
 
   async function addErrors(jobs) {
@@ -355,7 +433,7 @@
       if (my !== tracking) return;
       build.runId = run.id;
       saveHistory(build);
-      $("runLink").innerHTML = `<a href="${run.html_url}" target="_blank" rel="noopener">Zobacz na GitHubie</a>`;
+      $("runLink").innerHTML = `<a href="${run.html_url}" target="_blank" rel="noopener">View on GitHub</a>`;
       $("runLink").hidden = false;
 
       let jobs = [];
@@ -371,7 +449,7 @@
         const prep = jobs.find((x) => x.name === "prepare");
         if (prep && prep.conclusion === "failure") {
           await addErrors([prep]);
-          showMsg($("statusMsg"), "Złe dane wejściowe: " + (prep._error || "sprawdź log na GitHubie."));
+          showMsg($("statusMsg"), "Invalid input: " + (prep._error || "see the log on GitHub."));
         }
         if (r.status === "completed") break;
         await sleep(4000);
@@ -393,10 +471,10 @@
       ).join("");
       build.files = assets.map((a) => ({ name: a.name, url: a.browser_download_url }));
       build.state = assets.length === build.fws.length ? "ok" : assets.length ? "partial" : "bad";
-      if (assets.length) showMsg($("statusMsg"), "Wgraj plik pasujący do Twojego firmware'u do folderu apps/ na karcie SD (qFlipper albo aplikacja mobilna Flipper).", true);
+      if (assets.length) showMsg($("statusMsg"), "Copy the file for your firmware to the apps/ folder on the SD card (qFlipper or the Flipper mobile app).", true);
     } catch (err) {
       build.state = "bad";
-      if (err.status === 404) showMsg($("statusMsg"), "Żaden firmware się nie skompilował. Kliknij „log” przy błędzie albo zobacz build na GitHubie.");
+      if (err.status === 404) showMsg($("statusMsg"), "No firmware built successfully. Open the \"log\" link next to an error or view the build on GitHub.");
       else showMsg($("statusMsg"), explain(err));
     }
     saveHistory(build);
@@ -417,7 +495,7 @@
     $("history").innerHTML = list.map((b) => `
       <div class="history-item">
         <span>${icon[b.state] || "…"} <a href="#" data-id="${b.id}">${escapeHtml(b.repo)}</a>${b.ref ? " <span class='muted'>@ " + escapeHtml(b.ref) + "</span>" : ""}</span>
-        <span class="when">${new Date(b.started).toLocaleString("pl-PL", { dateStyle: "short", timeStyle: "short" })}</span>
+        <span class="when">${new Date(b.started).toLocaleString(undefined, { dateStyle: "short", timeStyle: "short" })}</span>
       </div>`).join("");
   }
 
@@ -434,6 +512,8 @@
   });
 
   renderHistory();
+  syncChannel();
+  loadVersions();
 })();
 </script>
 </body>

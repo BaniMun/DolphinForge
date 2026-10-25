@@ -18,10 +18,10 @@ step = next(s for s in wf["jobs"]["prepare"]["steps"] if s.get("id") == "parse")
 script = step["run"].split("<<'EOF'\n", 1)[1].rsplit("EOF", 1)[0]
 
 
-def run(repo, ref="", app_dir="", fw="official,momentum,unleashed", channel="release", rid="abc123-xyz"):
+def run(repo, ref="", app_dir="", fw="official,momentum,unleashed", channel="release", rid="abc123-xyz", versions=""):
     with tempfile.NamedTemporaryFile("r+", delete=False) as out:
         env = dict(os.environ, IN_REPO=repo, IN_REF=ref, IN_DIR=app_dir, IN_FW=fw,
-                   IN_CHANNEL=channel, IN_ID=rid, GITHUB_OUTPUT=out.name)
+                   IN_CHANNEL=channel, IN_ID=rid, IN_VERSIONS=versions, GITHUB_OUTPUT=out.name)
         p = subprocess.run([sys.executable, "-I", "-c", script], env=env, capture_output=True, text=True)
         outputs = dict(line.split("=", 1) for line in open(out.name).read().splitlines() if "=" in line)
     os.unlink(out.name)
@@ -59,6 +59,26 @@ check("reject bad ref", run("a/b", ref="main;echo")[0] != 0)
 check("reject bad channel", run("a/b", channel="nightly")[0] != 0)
 check("reject bad request id", run("a/b", rid="x")[0] != 0)
 check("dev channel accepted", run("a/b", channel="dev")[0] == 0)
+
+# archived versions -> SDK from each firmware's official archive
+code, out, _ = run("a/b", versions="official=1.3.4, momentum=mntm-010,unleashed=unlshd-090")
+inc = {i["fw"]: i for i in json.loads(out["matrix"])["include"]}
+check("official archive url",
+      inc["official"]["sdk_url"] == "https://update.flipperzero.one/builds/firmware/1.3.4/flipper-z-f7-sdk-1.3.4.zip")
+check("momentum archive url",
+      inc["momentum"]["sdk_url"] == "https://up.momentum-fw.dev/builds/firmware/mntm-010/flipper-z-f7-sdk-mntm-010.zip")
+check("unleashed archive url",
+      inc["unleashed"]["sdk_url"] == "https://github.com/DarkFlippers/unleashed-firmware/releases/download/unlshd-090/flipper-z-f7-sdk-unlshd-090.zip")
+check("version labels", [inc[f]["version"] for f in ("official", "momentum", "unleashed")] == ["1.3.4", "mntm-010", "unlshd-090"])
+
+code, out, _ = run("a/b", fw="official,momentum", versions="momentum=mntm-011,official=latest")
+inc = {i["fw"]: i for i in json.loads(out["matrix"])["include"]}
+check("latest keeps index build", inc["official"]["sdk_url"] == "" and inc["official"]["version"] == "latest")
+check("only chosen fw archived", inc["momentum"]["sdk_url"].endswith("mntm-011.zip"))
+
+check("reject momentum version on official", run("a/b", versions="official=mntm-010")[0] != 0)
+check("reject injected version", run("a/b", versions="unleashed=unlshd-090/../../x")[0] != 0)
+check("reject unknown fw in versions", run("a/b", versions="xtreme=1.0")[0] != 0)
 
 print(f"\n{'ALL PASSED' if not fails else f'{fails} FAILED'}")
 sys.exit(1 if fails else 0)

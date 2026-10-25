@@ -1,37 +1,44 @@
 # DolphinForge
 
-Kompilator aplikacji `.fap` dla Flipper Zero, działający na GitHub Pages i GitHub Actions.
-Podajesz link do repo aplikacji, wybierasz firmware (Official, Momentum, Unleashed) i dostajesz
-gotowe pliki do pobrania.
+Build Flipper Zero apps (`.fap`) in the browser for **Official**, **Momentum** and **Unleashed**
+firmware, latest or archived versions. Runs on GitHub Pages + GitHub Actions, no server.
 
-## Jak to działa
+## How it works
 
-- `index.html` to strona (GitHub Pages). Twoim tokenem, z Twojej przeglądarki, odpala workflow w tym repo.
-- `.github/workflows/build.yml` waliduje dane, buduje aplikację przez ufbt dla każdego firmware'u
-  osobno i publikuje pliki `.fap` jako Release `build-<id>`.
-- Budowany kod jest obcy, więc job budujący ma tylko odczyt i żadnych sekretów. Zapisuje wyłącznie
-  job `release`, który nie uruchamia kodu aplikacji.
+- `index.html` is the web page (GitHub Pages). With your token, from your browser, it starts the
+  build workflow in this repo and shows progress, errors and download links.
+- `.github/workflows/build.yml` validates the input, builds the app with ufbt once per firmware
+  and publishes the `.fap` files as a pre-release tagged `build-<id>`.
+- SDKs always come from each firmware's official distribution:
 
-## Uruchomienie
+  | Firmware  | Latest                     | Archived versions                                   |
+  |-----------|----------------------------|-----------------------------------------------------|
+  | Official  | update.flipperzero.one     | update.flipperzero.one/builds/firmware/<version>/   |
+  | Momentum  | up.momentum-fw.dev         | up.momentum-fw.dev/builds/firmware/<version>/       |
+  | Unleashed | up.unleashedflip.com       | GitHub releases of DarkFlippers/unleashed-firmware  |
 
-1. Wrzuć zawartość tego folderu do nowego, **publicznego** repo na swoim koncie.
-2. Settings → Pages → Source: *Deploy from a branch*, gałąź `main`, folder `/ (root)`.
-3. Utwórz fine-grained token (Settings konta → Developer settings → Fine-grained tokens):
-   - Repository access: tylko to repo
+- The app being built is third-party code, so the build job has read-only access and no secrets.
+  Only the `release` job can write, and it never runs the app's code.
+
+## Setup
+
+1. Settings → Pages → Source: *Deploy from a branch*, branch `main`, folder `/ (root)`.
+2. Create a fine-grained token (Account settings → Developer settings → Fine-grained tokens):
+   - Repository access: only this repo
    - Permissions: **Actions: Read and write**, **Contents: Read-only**
-4. Otwórz stronę `https://<login>.github.io/<repo>/`, w Ustawieniach wklej token i zapisz.
+3. Open `https://<login>.github.io/DolphinForge/`, paste the token in Settings and save.
 
-Link z gotowymi polami: `...?repo=owner/app&ref=main&dir=folder`.
+Prefilled link: `...?repo=owner/app&ref=main&dir=folder`.
 
-## Testy
+## Tests
 
 ```
 pip install pyyaml playwright
-python3 tests/test_prepare.py   # walidacja danych w workflow
-python3 tests/test_page.py      # strona w przeglądarce headless, z udawanym API GitHuba
+python3 tests/test_prepare.py   # workflow input validation and SDK URLs
+python3 tests/test_page.py      # the page in a headless browser against a fake GitHub API
 ```
 
-## Plany
+## Roadmap
 
-Wersja publiczna: backend na Cloudflare Workers trzymający token (bez tokena po stronie
-użytkownika), limit buildów na osobę (Turnstile), sprzątanie starych release'ów.
+Public version: a Cloudflare Worker holding the token (no token on the user side), per-user
+build limits (Turnstile), cleanup of old build releases.
