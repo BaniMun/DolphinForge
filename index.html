@@ -76,6 +76,8 @@
   .lcd-row[data-state="run"] .st::after { content: ""; animation: dots 1.2s steps(4) infinite; }
   @keyframes dots { 0% { content: ""; } 25% { content: "."; } 50% { content: ".."; } 75% { content: "..."; } }
   .lcd .summary { margin: 10px 0 0; font-size: 17px; }
+  .lcd .keep-open { margin: 12px 0 0; font-size: 15px; display: flex; align-items: center; gap: 8px; }
+  .lcd .keep-open::before { content: "!"; display: inline-grid; place-items: center; width: 18px; height: 18px; background: var(--lcd-ink); color: var(--lcd); font-weight: 600; }
   @media (prefers-reduced-motion: reduce) { .lcd-row[data-state="run"] .st::after { animation: none; content: "..."; } }
 
   /* status LED on the shell, like the Flipper's RGB LED */
@@ -95,8 +97,18 @@
     padding: 14px 16px; border-radius: 12px; background: var(--ink); color: var(--body);
     text-decoration: none; font-weight: 500;
   }
-  .file span { overflow-wrap: anywhere; }
+  .file { cursor: pointer; }
+  .file span { overflow-wrap: anywhere; flex: 1; }
   .file small { font-size: 14px; opacity: .7; white-space: nowrap; }
+  .file .dl {
+    flex: none; width: 38px; height: 38px; display: grid; place-items: center;
+    background: var(--lcd); color: var(--lcd-ink); border-radius: 8px;
+  }
+  .file .dl svg { width: 18px; height: 18px; }
+  .file[data-state="loading"] .dl svg { animation: nudge .8s steps(2, jump-none) infinite; }
+  .file[data-state="done"] .dl { background: #3ddc6a; }
+  @keyframes nudge { 50% { transform: translateY(3px); } }
+  @media (prefers-reduced-motion: reduce) { .file .dl svg { animation: none !important; } }
   .error { border-left: 4px solid var(--bad); padding: 4px 0 4px 14px; }
   .error b { display: block; }
   .error pre { margin: 4px 0; white-space: pre-wrap; font: 14px/1.45 ui-monospace, Menlo, monospace; color: var(--bad); }
@@ -203,6 +215,7 @@
         <div class="build-title" id="statusTitle"></div>
         <div id="statusRows"></div>
         <p class="summary" id="lcdSummary"></p>
+        <p class="keep-open" id="lcdNote" hidden>Keep this page open until it's done</p>
       </div>
     </div>
     <div class="device-foot">
@@ -331,6 +344,15 @@
 
   // ---------- status LED ----------
   let busy = false;
+  function setBusy(on) {
+    busy = on;
+    $("lcdNote").hidden = !on;
+  }
+  window.addEventListener("beforeunload", (e) => {
+    if (!busy) return;
+    e.preventDefault();
+    e.returnValue = ""; // browsers show their own "leave this page?" prompt
+  });
   function setLed(state, text) {
     $("led").dataset.led = state;
     $("led").setAttribute("aria-label", text);
@@ -755,17 +777,29 @@
         if (v) versions[fw] = v;
       });
     }
+    const latest = {};
+    if (channel === "release") {
+      fws.forEach((fw) => {
+        const list = document.querySelector(`.fw-ver[data-fw="${fw}"]`)._list;
+        if (!versions[fw] && list && list.length) latest[fw] = list[0];
+      });
+    }
     const build = {
-      id: requestId, repo, ref, dir, fws, channel, versions, label,
+      id: requestId, repo, ref, dir, fws, channel, versions, label, latest,
       upload: source === "upload", started: Date.now(), runId: null, state: "queued",
     };
 
     $("buildBtn").disabled = true;
-    busy = true;
+    setBusy(true);
     let uploaded = false;
     try {
       const branch = await getDefaultBranch();
       if (build.upload) {
+        $("lcdIdle").hidden = true;
+        $("lcdBuild").hidden = false;
+        $("statusTitle").textContent = build.label;
+        $("statusRows").innerHTML = "";
+        $("lcdSummary").textContent = "Uploading files…";
         setLed("busy", "Uploading…");
         try { await pushUpload(build.ref, upload.files); }
         catch (err) {
@@ -795,7 +829,7 @@
       if (uploaded) gh(`/repos/${settings.builderRepo}/git/refs/heads/${build.ref}`, { method: "DELETE" }).catch(() => {});
       showMsg($("formMsg"), explain(err));
       $("buildBtn").disabled = false;
-      busy = false;
+      setBusy(false);
       setLed("error", "Build didn't start");
     }
   });
@@ -831,7 +865,7 @@
 
   function versionLabel(build, fw) {
     if (build.channel === "dev") return "dev";
-    return (build.versions && build.versions[fw]) || "latest";
+    return (build.versions && build.versions[fw]) || (build.latest && build.latest[fw]) || "latest";
   }
 
   function escapeHtml(s) {
@@ -866,7 +900,7 @@
     $("lcdBuild").hidden = false;
     $("statusBox").hidden = false;
     $("statusTitle").textContent = build.label || `${build.repo}${build.ref ? " @ " + build.ref : ""}`;
-    busy = true;
+    setBusy(true);
     setLed("busy", "Building");
     $("lcdSummary").textContent = "";
     $("files").innerHTML = "";
@@ -904,7 +938,7 @@
     } catch (err) {
       if (my === tracking) { showMsg($("statusMsg"), explain(err)); setLed("error", "Lost track of the build"); }
     } finally {
-      if (my === tracking) { $("buildBtn").disabled = false; busy = false; }
+      if (my === tracking) { $("buildBtn").disabled = false; setBusy(false); }
     }
   }
 
@@ -912,10 +946,15 @@
     try {
       const rel = await gh(`/repos/${settings.builderRepo}/releases/tags/build-${build.id}`);
       const assets = (rel.assets || []).filter((a) => a.name.endsWith(".fap"));
-      $("files").innerHTML = assets.map((a) =>
-        `<a class="file" href="${a.browser_download_url}" download><span>${escapeHtml(a.name)}</span><small>${(a.size / 1024).toFixed(1)} KB</small></a>`
-      ).join("");
-      build.files = assets.map((a) => ({ name: a.name, url: a.browser_download_url }));
+      $("files").innerHTML = assets.map((a) => {
+        const saveName = realName(build, a.name);
+        return `<a class="file" href="${a.browser_download_url}" data-file="${escapeHtml(a.name)}" data-tag="build-${build.id}" data-name="${escapeHtml(saveName)}" download="${escapeHtml(saveName)}">` +
+          `<span>${escapeHtml(saveName)}</span><small>${(a.size / 1024).toFixed(1)} KB</small>` +
+          `<span class="dl" aria-hidden="true"><svg viewBox="0 0 9 9" shape-rendering="crispEdges" fill="currentColor">` +
+          `<rect x="3" y="0" width="3" height="5"/><rect x="1" y="4" width="7" height="1"/><rect x="2" y="5" width="5" height="1"/>` +
+          `<rect x="3" y="6" width="3" height="1"/><rect x="4" y="7" width="1" height="1"/><rect x="0" y="8" width="9" height="1"/></svg></span></a>`;
+      }).join("");
+      build.files = assets.map((a) => ({ name: realName(build, a.name), url: a.browser_download_url }));
       build.state = assets.length === build.fws.length ? "ok" : assets.length ? "partial" : "bad";
       $("lcdSummary").textContent = `${assets.length} of ${build.fws.length} built`;
       if (build.state === "ok") setLed("ready", "Built");
@@ -930,6 +969,43 @@
     }
     saveHistory(build);
   }
+
+  // "-latest" in a file name becomes the version it was actually built for.
+  function realName(build, name) {
+    const m = name.match(/-(official|momentum|unleashed)-latest\.fap$/);
+    if (!m || !build.latest || !build.latest[m[1]]) return name;
+    return name.replace(/-latest\.fap$/, `-${build.latest[m[1]]}.fap`);
+  }
+
+  // Download on the page itself: the release tag points at a commit holding the
+  // .fap files, and the contents API (unlike release downloads) answers browser
+  // requests, so the file is fetched and saved without leaving the page.
+  $("files").addEventListener("click", async (e) => {
+    const link = e.target.closest("a.file");
+    if (!link) return;
+    e.preventDefault();
+    if (link.dataset.state === "loading") return;
+    link.dataset.state = "loading";
+    try {
+      const res = await fetch(
+        `${API}/repos/${settings.builderRepo}/contents/${encodeURIComponent(link.dataset.file)}?ref=${encodeURIComponent(link.dataset.tag)}`,
+        { headers: { Accept: "application/vnd.github.raw", Authorization: "Bearer " + settings.token } });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const blob = new Blob([await res.arrayBuffer()], { type: "application/octet-stream" });
+      const url = URL.createObjectURL(blob);
+      const save = document.createElement("a");
+      save.href = url;
+      save.download = link.dataset.name;
+      document.body.appendChild(save);
+      save.click();
+      save.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 30000);
+      link.dataset.state = "done";
+    } catch {
+      link.dataset.state = "";
+      location.href = link.href; // fallback: GitHub's own download link
+    }
+  });
 
   // ---------- history ----------
   function saveHistory(build) {
@@ -965,7 +1041,17 @@
   renderHistory();
   syncChannel();
   loadVersions();
-  checkReady();
+
+  // Picked up after a refresh: GitHub keeps building, so resume watching the
+  // latest build if it never finished and started less than 30 minutes ago.
+  const last = store.get("history", [])[0];
+  if (last && last.state === "queued" && Date.now() - last.started < 30 * 60 * 1000 && settings.token) {
+    if (!last.upload) { $("repo").value = last.repo; $("ref").value = last.ref || ""; $("appDir").value = last.dir || ""; }
+    $("buildBtn").disabled = true;
+    track(last);
+  } else {
+    checkReady();
+  }
 })();
 </script>
 </body>

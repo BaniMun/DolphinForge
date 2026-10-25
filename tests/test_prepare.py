@@ -85,6 +85,9 @@ jobs = wf["jobs"]
 check("cleanup only for upload branches", "startsWith(inputs.ref, 'upload/')" in jobs["cleanup"]["if"])
 check("cleanup runs after everything", jobs["cleanup"]["needs"] == ["prepare", "build", "release"])
 check("build job is read-only", jobs["build"]["permissions"] == {"contents": "read"})
+publish = next(st["run"] for st in jobs["release"]["steps"] if st.get("name") == "Publish release")
+check("release tag points at the files commit", '--target "$commit"' in publish)
+check("files commit has no parents", "parents: []" in publish)
 
 print(f"\n{'ALL PASSED' if not fails else f'{fails} FAILED'}")
 sys.exit(1 if fails else 0)

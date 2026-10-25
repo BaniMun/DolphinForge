@@ -28,7 +28,9 @@ def check(name, cond):
 class FakeGitHub:
     """Stateful fake of the few endpoints the page uses."""
 
-    def __init__(self, dispatch_status=204, blob_status=201):
+    def __init__(self, dispatch_status=204, blob_status=201, never_done=False, rid=None):
+        self.never_done = never_done
+        self.rid = rid
         self.dispatch_status = dispatch_status
         self.blob_status = blob_status
         self.blobs = []
@@ -116,7 +118,7 @@ class FakeGitHub:
                 return reply({"message": "nope"}, self.dispatch_status)
             self.dispatched = json.loads(req.post_data)
             return route.fulfill(status=204, headers={"access-control-allow-origin": "*"})
-        rid = self.dispatched["inputs"]["request_id"] if self.dispatched else "none"
+        rid = self.rid or (self.dispatched["inputs"]["request_id"] if self.dispatched else "none")
         if path == "/repos/me/builder/actions/workflows/build.yml/runs":
             self.list_polls += 1
             runs = [] if self.list_polls == 1 else [
@@ -125,11 +127,11 @@ class FakeGitHub:
             return reply({"workflow_runs": runs})
         if path == "/repos/me/builder/actions/runs/77":
             self.run_polls += 1
-            done = self.run_polls >= 2
+            done = self.run_polls >= 2 and not self.never_done
             return reply({"id": 77, "status": "completed" if done else "in_progress",
                           "html_url": "https://gh/run/77"})
         if path == "/repos/me/builder/actions/runs/77/jobs":
-            done = self.run_polls >= 2
+            done = self.run_polls >= 2 and not self.never_done
             return reply({"jobs": [
                 {"id": 1, "name": "prepare", "status": "completed", "conclusion": "success", "html_url": "j1"},
                 {"id": 2, "name": "Official", "status": "completed", "conclusion": "success", "html_url": "j2"},
@@ -141,9 +143,13 @@ class FakeGitHub:
             return reply([{"annotation_level": "failure", "message": "src/app.c:12: error: unknown type <Foo>"}])
         if path == f"/repos/me/builder/releases/tags/build-{rid}":
             return reply({"assets": [
-                {"name": "cfs_tag_writer-official.fap", "size": 20480, "browser_download_url": "https://dl/o.fap"},
-                {"name": "cfs_tag_writer-unleashed.fap", "size": 20992, "browser_download_url": "https://dl/u.fap"},
-                {"name": "notes.txt", "size": 1, "browser_download_url": "https://dl/n"}]})
+                {"id": 501, "name": "cfs_tag_writer-official-latest.fap", "size": 20480, "browser_download_url": "https://dl/o.fap"},
+                {"id": 502, "name": "cfs_tag_writer-unleashed-latest.fap", "size": 20992, "browser_download_url": "https://dl/u.fap"},
+                {"id": 503, "name": "notes.txt", "size": 1, "browser_download_url": "https://dl/n"}]})
+        if path == "/repos/me/builder/contents/cfs_tag_writer-official-latest.fap" and f"ref=build-{rid}" in url:
+            self.asset_accept = req.headers.get("accept")
+            return route.fulfill(status=200, headers={"access-control-allow-origin": "*", "content-type": "application/octet-stream"},
+                                 body=b"FAPDATA")
         return reply({"message": "Not Found"}, 404)
 
 
@@ -210,6 +216,16 @@ with sync_playwright() as p:
     files = page.locator("#files a.file")
     check("only .fap files listed", files.count() == 2)
     check("download link", files.first.get_attribute("href") == "https://dl/o.fap")
+    check("latest renamed to real version", "cfs_tag_writer-official-1.5.1.fap" in page.inner_text("#files"))
+    check("download arrow shown", files.first.locator(".dl svg").count() == 1)
+    with page.expect_download() as dl:
+        files.first.click()
+    d = dl.value
+    check("downloads on the page", d.suggested_filename == "cfs_tag_writer-official-1.5.1.fap")
+    check("downloaded bytes", pathlib.Path(d.path()).read_bytes() == b"FAPDATA")
+    check("file fetched raw from contents API", gh.asset_accept == "application/vnd.github.raw")
+    check("stayed on DolphinForge", page.url.startswith("file://"))
+    check("latest version on screen", "1.5.1" in page.inner_text("#statusRows"))
     rows = page.inner_text("#statusRows")
     check("official done", "Official" in rows and "Done" in rows)
     errs = page.inner_text("#errors")
@@ -218,6 +234,7 @@ with sync_playwright() as p:
     check("log link for failure", page.locator("#errors a").get_attribute("href") == "https://gh/job/3")
     check("summary on screen", page.inner_text("#lcdSummary") == "2 of 3 built")
     check("LED red after partial failure", page.get_attribute("#led", "data-led") == "fail")
+    check("keep-open note gone when done", page.is_hidden("#lcdNote"))
     check("history shows partial", "◐" in page.inner_text("#history"))
     check("run link", page.locator("#runLink a").get_attribute("href") == "https://gh/run/77")
     check("button re-enabled", page.is_enabled("#buildBtn"))
@@ -244,6 +261,40 @@ with sync_playwright() as p:
     page.wait_for_function("!document.getElementById('formMsg').hidden")
     check("bad token message", "token is invalid" in page.inner_text("#formMsg"))
     check("LED shows rejected token", page.get_attribute("#led", "data-led") == "error")
+    ctx.close()
+
+    # --- refresh during a build: note shown, build resumed ---
+    running = {"id": "resume-1", "repo": "owner/app", "ref": "dev", "dir": "apps/cfs",
+               "fws": ["official", "momentum", "unleashed"], "channel": "release", "versions": {},
+               "started": 0, "runId": 77, "state": "queued"}
+    # "started" has to be now in the browser's clock, so it is set in the init script
+    ctx = browser.new_context()
+    page = ctx.new_page()
+    page.route("https://api.github.com/**", FakeGitHub(never_done=True).handle)
+    page.add_init_script(
+        "localStorage.setItem('dforge.builderRepo', JSON.stringify('me/builder'));"
+        "localStorage.setItem('dforge.token', JSON.stringify('good-token'));"
+        f"const h = {json.dumps([running])}; h[0].started = Date.now();"
+        "localStorage.setItem('dforge.history', JSON.stringify(h));")
+    page.goto(PAGE)
+    page.wait_for_selector("#lcdNote:not([hidden])")
+    check("keep-open note while building", "Keep this page open" in page.inner_text("#lcdNote"))
+    check("resumed after refresh", "Building" in page.inner_text("#statusRows") or "Waiting" in page.inner_text("#statusRows"))
+    check("LED blue while building", page.get_attribute("#led", "data-led") == "busy")
+    check("form refilled on resume", page.input_value("#repo") == "owner/app")
+    ctx.close()
+
+    ctx = browser.new_context()
+    page = ctx.new_page()
+    page.route("https://api.github.com/**", FakeGitHub(rid="resume-2").handle)
+    page.add_init_script(
+        "localStorage.setItem('dforge.builderRepo', JSON.stringify('me/builder'));"
+        "localStorage.setItem('dforge.token', JSON.stringify('good-token'));"
+        f"const h = {json.dumps([dict(running, id='resume-2', state='queued', started=1)])};"
+        "localStorage.setItem('dforge.history', JSON.stringify(h));")
+    page.goto(PAGE)
+    page.wait_for_timeout(500)
+    check("old unfinished build not resumed", page.is_hidden("#lcdBuild"))
     ctx.close()
 
     # --- upload scenarios ---
