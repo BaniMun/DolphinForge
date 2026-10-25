@@ -153,7 +153,28 @@
     font: 600 17px/1 var(--sans); cursor: pointer; border-radius: 999px;
     border: 2px solid var(--ink); background: transparent; color: var(--ink); padding: 12px 22px;
   }
-  button.primary { width: 100%; margin-top: 24px; padding: 17px; background: var(--ink); color: var(--body); }
+  button.primary { width: 100%; padding: 17px; background: var(--ink); color: var(--body); }
+
+  /* repo field with paste / clear */
+  .field { position: relative; }
+  .field input { padding-right: 118px; }
+  .field-btns { position: absolute; right: 6px; top: 50%; transform: translateY(-50%); display: flex; gap: 6px; }
+  .field-btns button { padding: 7px 13px; font-size: 14px; }
+  .field-btns .clear { width: 34px; padding: 7px 0; }
+
+  /* rarely-changed options */
+  .more { margin-top: 20px; }
+  .more > summary { font-size: 16px; }
+  .more-sum { color: var(--muted); font-weight: 400; font-size: 14px; margin-left: 6px; }
+  .more .pair label, .more > label { margin-top: 14px; }
+
+  /* Build stays under the thumb */
+  .build-bar {
+    position: sticky; bottom: 0; z-index: 5; margin-top: 20px;
+    padding: 14px 0 calc(14px + env(safe-area-inset-bottom));
+    background: linear-gradient(to top, var(--body) 75%, transparent);
+  }
+  .build-bar #formMsg { margin: 10px 0 0; }
   button:disabled { opacity: .5; cursor: default; }
   #formMsg { margin-top: 12px; }
 
@@ -171,6 +192,7 @@
   .pick:focus-within { outline: 3px solid var(--lcd); outline-offset: 2px; }
   .up-summary { margin-top: 12px; font-weight: 500; }
 
+  .fw-label { margin-top: 24px; }
   .dir-toggle { margin-top: 12px; padding: 8px 16px; font-size: 15px; }
   .dir-toggle[aria-expanded="true"]::after { content: " ▾"; }
   .dir-toggle[aria-expanded="false"]::after { content: " ▸"; }
@@ -189,9 +211,15 @@
 
   /* ---------- lower sections ---------- */
   .section { margin-top: 44px; }
-  .history-item { display: flex; justify-content: space-between; gap: 12px; padding: 10px 0; border-top: 1px solid var(--line); }
+  .history-item { padding: 12px 0; border-top: 1px solid var(--line); }
   .history-item:first-child { border-top: 0; }
+  .h-top { display: flex; justify-content: space-between; gap: 12px; }
   .history-item .when { color: var(--muted); font-size: 14px; white-space: nowrap; }
+  .h-files { display: grid; gap: 6px; margin-top: 8px; }
+  .file.mini { padding: 8px 10px; font-size: 14px; border-radius: 10px; }
+  .file.mini .dl { width: 30px; height: 30px; }
+  .file.mini small { font-size: 12px; }
+  .again { margin-top: 8px; padding: 7px 14px; font-size: 14px; }
   details summary { cursor: pointer; font-weight: 600; font-size: 20px; list-style: none; }
   details summary::-webkit-details-marker { display: none; }
   details summary::after { content: " +"; color: var(--muted); }
@@ -267,7 +295,13 @@
 
     <div id="srcGithub">
     <label for="repo">App on GitHub</label>
-    <input type="text" id="repo" placeholder="github.com/owner/app" required spellcheck="false" autocapitalize="off">
+    <div class="field">
+      <input type="text" id="repo" placeholder="github.com/owner/app" required spellcheck="false" autocapitalize="off" inputmode="url">
+      <div class="field-btns">
+        <button type="button" class="clear" id="clearBtn" aria-label="Clear" hidden>✕</button>
+        <button type="button" id="pasteBtn">Paste</button>
+      </div>
+    </div>
     <p class="hint" id="repoHint" hidden></p>
     <button type="button" id="dirToggle" class="dir-toggle" aria-expanded="false">Browse apps</button>
     <div id="dirPanel" class="dir" hidden>
@@ -275,21 +309,9 @@
       <div id="dirItems" class="dir-items"></div>
       <p class="hint">A short starter list. Paste any repo above to build something that isn't here.</p>
     </div>
-    <div class="pair">
-      <div>
-        <label for="ref">Branch or tag</label>
-        <input type="text" id="ref" placeholder="Default branch" list="refList" spellcheck="false" autocapitalize="off">
-        <datalist id="refList"></datalist>
-      </div>
-      <div>
-        <label for="appDir">App folder</label>
-        <input type="text" id="appDir" placeholder="Repo root (top folder)" list="dirList" spellcheck="false" autocapitalize="off">
-        <datalist id="dirList"></datalist>
-      </div>
-    </div>
     </div>
 
-    <label>Firmware and version</label>
+    <label class="fw-label">Firmware and version</label>
     <div class="fw-list" id="fwChips">
       <div class="fw-row">
         <label class="chip"><input type="checkbox" value="official" checked><span>Official</span></label>
@@ -306,14 +328,31 @@
     </div>
     <p class="hint" id="verHint">Versions are listed from each firmware's official releases. Pick the one your Flipper runs.</p>
 
-    <label for="channel">SDK</label>
-    <select id="channel">
-      <option value="release">Stable releases</option>
-      <option value="dev">Development build</option>
-    </select>
+    <details class="more" id="moreOpts">
+      <summary>More options<span class="more-sum" id="moreSum"></span></summary>
+      <div class="pair" id="ghOpts">
+        <div>
+          <label for="ref">Branch or tag</label>
+          <input type="text" id="ref" placeholder="Default branch" list="refList" spellcheck="false" autocapitalize="off">
+          <datalist id="refList"></datalist>
+        </div>
+        <div>
+          <label for="appDir">App folder</label>
+          <input type="text" id="appDir" placeholder="Repo root (top folder)" list="dirList" spellcheck="false" autocapitalize="off">
+          <datalist id="dirList"></datalist>
+        </div>
+      </div>
+      <label for="channel">SDK</label>
+      <select id="channel">
+        <option value="release">Stable releases</option>
+        <option value="dev">Development build</option>
+      </select>
+    </details>
 
-    <button class="primary" id="buildBtn" type="submit">Build</button>
-    <p class="note warn" id="formMsg" hidden></p>
+    <div class="build-bar">
+      <button class="primary" id="buildBtn" type="submit">Build</button>
+      <p class="note warn" id="formMsg" hidden></p>
+    </div>
   </form>
 
   <section class="section" id="historyBox" hidden>
@@ -508,7 +547,8 @@
     const dev = $("channel").value === "dev";
     document.querySelectorAll(".fw-ver").forEach((sel) => {
       if (dev) {
-        if (!sel.disabled) sel._keep = sel.value;
+        // keep the remembered version until the real list has loaded
+        if (!sel.disabled && (sel.value || (sel._list && sel._list.length))) sel._keep = sel.value;
         sel.innerHTML = `<option value="">Newest dev build</option>`;
         sel.disabled = true;
       } else if (sel.disabled) {
@@ -540,6 +580,58 @@
     el.hidden = !text;
   }
 
+  // ---------- "More options" summary ----------
+  function updateMoreSum() {
+    const sdk = $("channel").value === "dev" ? "dev SDK" : "stable SDK";
+    $("moreSum").textContent = source === "github"
+      ? `${$("ref").value.trim() || "default branch"} · ${$("appDir").value.trim() || "repo root"} · ${sdk}`
+      : sdk;
+  }
+  ["ref", "appDir"].forEach((id) => $(id).addEventListener("input", updateMoreSum));
+
+  // ---------- remembered firmware choice ("my Flipper") ----------
+  function savePrefs() {
+    const fws = [...document.querySelectorAll("#fwChips input")].filter((i) => i.checked).map((i) => i.value);
+    const versions = {};
+    document.querySelectorAll(".fw-ver").forEach((sel) => {
+      const v = sel.disabled ? sel._keep : sel.value;
+      if (v) versions[sel.dataset.fw] = v;
+    });
+    store.set("prefs", { fws, versions, channel: $("channel").value });
+  }
+  function loadPrefs() {
+    const pr = store.get("prefs", null);
+    if (!pr) return;
+    document.querySelectorAll("#fwChips input").forEach((i) => { i.checked = (pr.fws || []).includes(i.value); });
+    $("channel").value = pr.channel === "dev" ? "dev" : "release";
+    document.querySelectorAll(".fw-ver").forEach((sel) => { sel._keep = (pr.versions || {})[sel.dataset.fw] || ""; });
+  }
+  document.querySelectorAll("#fwChips input, .fw-ver").forEach((el) => el.addEventListener("change", savePrefs));
+  $("channel").addEventListener("change", () => { savePrefs(); updateMoreSum(); });
+
+  // ---------- paste / clear on the repo field ----------
+  function syncClear() { $("clearBtn").hidden = !$("repo").value; }
+  $("repo").addEventListener("input", syncClear);
+  if (navigator.clipboard && navigator.clipboard.readText) {
+    $("pasteBtn").addEventListener("click", async () => {
+      try {
+        const text = (await navigator.clipboard.readText()).trim();
+        if (!text) return;
+        $("repo").value = text;
+        $("repo").dispatchEvent(new Event("input"));
+      } catch { $("repo").focus(); }
+    });
+  } else {
+    $("pasteBtn").hidden = true;
+  }
+  $("clearBtn").addEventListener("click", () => {
+    $("repo").value = "";
+    ["ref", "appDir"].forEach((id) => { if ($(id).dataset.auto === "1") { $(id).value = ""; $(id).dataset.auto = ""; } });
+    $("repo").dispatchEvent(new Event("input"));
+    updateMoreSum();
+    $("repo").focus();
+  });
+
   // ---------- source: GitHub link or uploaded files ----------
   let source = "github";
   let upload = null;
@@ -550,6 +642,8 @@
     $("srcGithub").hidden = src !== "github";
     $("srcUpload").hidden = src !== "upload";
     $("repo").required = src === "github";
+    $("ghOpts").hidden = src !== "github";
+    updateMoreSum();
     document.querySelector("#lcdIdle .idle-line").textContent = src === "github"
       ? "Paste a Flipper app link below and press Build."
       : "Upload your app below and press Build.";
@@ -698,6 +792,7 @@
     if (el.value && el.dataset.auto !== "1") return; // never overwrite what the person typed
     el.value = value;
     el.dataset.auto = value ? "1" : "";
+    updateMoreSum();
   }
   ["ref", "appDir"].forEach((id) => $(id).addEventListener("input", () => { $(id).dataset.auto = ""; }));
 
@@ -741,7 +836,8 @@
       $("dirList").innerHTML = fams.map((d) => `<option value="${escapeHtml(d)}">`).join("");
       if (!fams.length) return repoHint(`No application.fam on ${ref}. This doesn't look like a Flipper app.`, true);
       if (fams.length > 1 && !$("appDir").value) {
-        return repoHint(`Found ${fams.length} apps. Pick one in App folder.`);
+        $("moreOpts").open = true;
+        return repoHint(`Found ${fams.length} apps. Pick one in More options, App folder.`);
       }
       const dir = $("appDir").value.trim() || fams[0];
       if (fams.length === 1) setAuto("appDir", fams[0]);
@@ -961,6 +1057,7 @@
 
   async function track(build) {
     const my = ++tracking;
+    window.scrollTo({ top: 0, behavior: "smooth" });
     $("lcdIdle").hidden = true;
     $("lcdTopName").hidden = false;
     $("lcdBuild").hidden = false;
@@ -1012,15 +1109,10 @@
     try {
       const rel = await gh(`/repos/${settings.builderRepo}/releases/tags/build-${build.id}`);
       const assets = (rel.assets || []).filter((a) => a.name.endsWith(".fap"));
-      $("files").innerHTML = assets.map((a) => {
-        const saveName = realName(build, a.name);
-        return `<a class="file" href="${a.browser_download_url}" data-file="${escapeHtml(a.name)}" data-tag="build-${build.id}" data-name="${escapeHtml(saveName)}" download="${escapeHtml(saveName)}">` +
-          `<span>${escapeHtml(saveName)}</span><small>${(a.size / 1024).toFixed(1)} KB</small>` +
-          `<span class="dl" aria-hidden="true"><svg viewBox="0 0 9 9" shape-rendering="crispEdges" fill="currentColor">` +
-          `<rect x="3" y="0" width="3" height="5"/><rect x="1" y="4" width="7" height="1"/><rect x="2" y="5" width="5" height="1"/>` +
-          `<rect x="3" y="6" width="3" height="1"/><rect x="4" y="7" width="1" height="1"/><rect x="0" y="8" width="9" height="1"/></svg></span></a>`;
-      }).join("");
-      build.files = assets.map((a) => ({ name: realName(build, a.name), url: a.browser_download_url }));
+      build.files = assets.map((a) => ({
+        name: realName(build, a.name), file: a.name, tag: `build-${build.id}`, url: a.browser_download_url, size: a.size,
+      }));
+      $("files").innerHTML = build.files.map((f) => fileLink(f, false)).join("");
       build.state = assets.length === build.fws.length ? "ok" : assets.length ? "partial" : "bad";
       $("lcdSummary").textContent = `${assets.length} of ${build.fws.length} built`;
       if (build.state === "ok") setLed("ready", "Built");
@@ -1036,6 +1128,15 @@
     saveHistory(build);
   }
 
+  function fileLink(f, mini) {
+    const data = f.file ? ` data-file="${escapeHtml(f.file)}" data-tag="${escapeHtml(f.tag)}"` : "";
+    return `<a class="file${mini ? " mini" : ""}" href="${f.url}"${data} data-name="${escapeHtml(f.name)}" download="${escapeHtml(f.name)}">` +
+      `<span>${escapeHtml(f.name)}</span>${f.size ? `<small>${(f.size / 1024).toFixed(1)} KB</small>` : ""}` +
+      `<span class="dl" aria-hidden="true"><svg viewBox="0 0 9 9" shape-rendering="crispEdges" fill="currentColor">` +
+      `<rect x="3" y="0" width="3" height="5"/><rect x="1" y="4" width="7" height="1"/><rect x="2" y="5" width="5" height="1"/>` +
+      `<rect x="3" y="6" width="3" height="1"/><rect x="4" y="7" width="1" height="1"/><rect x="0" y="8" width="9" height="1"/></svg></span></a>`;
+  }
+
   // "-latest" in a file name becomes the version it was actually built for.
   function realName(build, name) {
     const m = name.match(/-(official|momentum|unleashed)-latest\.fap$/);
@@ -1046,8 +1147,8 @@
   // Download on the page itself: the release tag points at a commit holding the
   // .fap files, and the contents API (unlike release downloads) answers browser
   // requests, so the file is fetched and saved without leaving the page.
-  $("files").addEventListener("click", async (e) => {
-    const link = e.target.closest("a.file");
+  document.addEventListener("click", async (e) => {
+    const link = e.target.closest("a.file[data-file]");
     if (!link) return;
     e.preventDefault();
     if (link.dataset.state === "loading") return;
@@ -1085,28 +1186,54 @@
     const list = store.get("history", []);
     $("historyBox").hidden = !list.length;
     const icon = { ok: "✓", partial: "◐", bad: "✕" };
-    $("history").innerHTML = list.map((b) => `
-      <div class="history-item">
-        <span>${icon[b.state] || "…"} <a href="#" data-id="${b.id}">${escapeHtml(b.label || b.repo)}</a>${b.ref && !b.upload ? " <span class='when'>@ " + escapeHtml(b.ref) + "</span>" : ""}</span>
-        <span class="when">${new Date(b.started).toLocaleString(undefined, { dateStyle: "short", timeStyle: "short" })}</span>
-      </div>`).join("");
+    $("history").innerHTML = list.map((b) => {
+      const files = (b.files || []).map((f) => fileLink(f, true)).join("");
+      return `<div class="history-item">
+        <div class="h-top">
+          <span>${icon[b.state] || "…"} <a href="#" data-id="${b.id}">${escapeHtml(b.label || b.repo)}</a>${b.ref && !b.upload ? " <span class='when'>@ " + escapeHtml(b.ref) + "</span>" : ""}</span>
+          <span class="when">${new Date(b.started).toLocaleString(undefined, { dateStyle: "short", timeStyle: "short" })}</span>
+        </div>
+        ${files ? `<div class="h-files">${files}</div>` : ""}
+        ${b.upload ? "" : `<button type="button" class="again" data-again="${b.id}">Build again</button>`}
+      </div>`;
+    }).join("");
   }
 
   $("history").addEventListener("click", (e) => {
+    const again = e.target.closest("[data-again]");
+    if (again) {
+      const b = store.get("history", []).find((x) => x.id === again.dataset.again);
+      if (!b || $("buildBtn").disabled) return;
+      setSource("github");
+      $("repo").value = b.repo; syncClear();
+      $("ref").value = b.ref || ""; $("ref").dataset.auto = "";
+      $("appDir").value = b.dir || ""; $("appDir").dataset.auto = "";
+      document.querySelectorAll("#fwChips input").forEach((i) => { i.checked = b.fws.includes(i.value); });
+      $("channel").value = b.channel === "dev" ? "dev" : "release";
+      syncChannel();
+      document.querySelectorAll(".fw-ver").forEach((sel) => {
+        if (!sel.disabled) sel.value = (b.versions || {})[sel.dataset.fw] || "";
+      });
+      updateMoreSum();
+      $("buildForm").requestSubmit();
+      return;
+    }
     const a = e.target.closest("a[data-id]");
     if (!a) return;
     e.preventDefault();
     const b = store.get("history", []).find((x) => x.id === a.dataset.id);
     if (!b) return;
-    if (!b.upload) { setSource("github"); $("repo").value = b.repo; $("ref").value = b.ref || ""; $("appDir").value = b.dir || ""; }
+    if (!b.upload) { setSource("github"); $("repo").value = b.repo; $("ref").value = b.ref || ""; $("appDir").value = b.dir || ""; syncClear(); updateMoreSum(); }
     $("buildBtn").disabled = true;
     track(b);
-    window.scrollTo({ top: 0, behavior: "smooth" });
   });
 
+  loadPrefs();
   renderHistory();
   syncChannel();
   loadVersions();
+  syncClear();
+  updateMoreSum();
 
   // Picked up after a refresh: GitHub keeps building, so resume watching the
   // latest build if it never finished and started less than 30 minutes ago.

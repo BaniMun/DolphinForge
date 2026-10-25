@@ -180,7 +180,10 @@ with sync_playwright() as p:
     uopts = page.eval_on_selector_all(".fw-ver[data-fw=unleashed] option", "els => els.map(e => e.textContent)")
     check("drafts/prereleases skipped", uopts == ["Latest (unlshd-094)", "unlshd-093"])
     page.select_option(".fw-ver[data-fw=momentum]", "mntm-011")
+    check("SDK channel tucked away", page.is_hidden("#channel"))
+    page.click("#moreOpts summary")
     page.select_option("#channel", "dev")
+    check("summary shows dev SDK", page.inner_text("#moreSum").endswith("dev SDK"))
     check("dev disables versions", page.is_disabled(".fw-ver[data-fw=momentum]"))
     check("dev says newest dev build", page.inner_text(".fw-ver[data-fw=official]") == "Newest dev build")
     check("dev hint shown", "dev snapshot" in page.inner_text("#verHint"))
@@ -188,6 +191,7 @@ with sync_playwright() as p:
     check("stable versions back", page.eval_on_selector(".fw-ver[data-fw=official] option", "e => e.textContent") == "Latest (1.5.1)")
     check("picked version remembered", page.input_value(".fw-ver[data-fw=momentum]") == "mntm-011")
     check("stable hint back", "official releases" in page.inner_text("#verHint"))
+    page.click("#moreOpts summary")  # fold the options back up
     page.select_option(".fw-ver[data-fw=momentum]", "mntm-010")
 
     page.fill("#builderRepo", "https://github.com/me/builder/")
@@ -202,6 +206,9 @@ with sync_playwright() as p:
     check("autofill branch from link", page.input_value("#ref") == "dev")
     check("autofill folder from link", page.input_value("#appDir") == "apps/cfs")
     check("app name shown", "CFS Tag Writer (cfs_tag_writer) in apps/cfs" in page.inner_text("#repoHint"))
+    check("more options collapsed", page.get_attribute("#moreOpts", "open") is None)
+    check("summary shows branch and folder", page.inner_text("#moreSum") == "dev · apps/cfs · stable SDK")
+    check("clear button shown", page.is_visible("#clearBtn"))
     page.click("#buildBtn")
     page.wait_for_selector("#files a.file", timeout=15000)
 
@@ -226,6 +233,18 @@ with sync_playwright() as p:
     check("file fetched raw from contents API", gh.asset_accept == "application/vnd.github.raw")
     check("stayed on DolphinForge", page.url.startswith("file://"))
     check("latest version on screen", "1.5.1" in page.inner_text("#statusRows"))
+    check("history has downloads", page.locator("#history .file").count() == 2)
+    with page.expect_download() as dl2:
+        page.locator("#history .file").first.click()
+    check("download from history", dl2.value.suggested_filename == "cfs_tag_writer-official-1.5.1.fap")
+    first_rid = gh.dispatched["inputs"]["request_id"]
+    page.locator("#history [data-again]").first.click()
+    page.wait_for_function(f"document.querySelectorAll('#history .history-item').length === 2")
+    again = gh.dispatched["inputs"]
+    check("build again sends a new build", again["request_id"] != first_rid)
+    check("build again keeps the setup",
+          (again["repo"], again["ref"], again["app_dir"], again["versions"]) == ("owner/app", "dev", "apps/cfs", "momentum=mntm-010"))
+    page.wait_for_selector("#files a.file")
     rows = page.inner_text("#statusRows")
     check("official done", "Official" in rows and "Done" in rows)
     errs = page.inner_text("#errors")
@@ -243,6 +262,8 @@ with sync_playwright() as p:
 
     # history survives reload and settings persist
     page.reload()
+    page.wait_for_function("document.querySelector('.fw-ver[data-fw=momentum]').options.length > 1")
+    check("firmware choice remembered", page.input_value(".fw-ver[data-fw=momentum]") == "mntm-010")
     check("settings persisted", page.input_value("#token") == "good-token")
     check("history persisted", "owner/app" in page.inner_text("#history"))
     check("no JS errors", not errors)
@@ -374,9 +395,11 @@ with sync_playwright() as p:
     check("root app: hint says repo root", "in the repo root" in page.inner_text("#repoHint"))
     page.fill("#repo", "owner/multi")
     page.wait_for_function("document.getElementById('repoHint').textContent.includes('2 apps')")
+    check("several apps open More options", page.get_attribute("#moreOpts", "open") is not None)
     check("branch follows the new repo", page.input_value("#ref") == "master")
     opts = page.eval_on_selector_all("#dirList option", "els => els.map(e => e.value)")
     check("multiple apps offered", opts == ["a", "b"])
+    page.evaluate("document.getElementById('moreOpts').open = true")
     page.fill("#appDir", "keep/me")
     page.fill("#repo", "owner/app/tree/dev/apps/cfs")
     page.wait_for_timeout(900)
@@ -384,6 +407,23 @@ with sync_playwright() as p:
     page.fill("#repo", "owner/missing")
     page.wait_for_function("document.getElementById('repoHint').textContent.includes('public')")
     check("missing repo explained", "Can't find" in page.inner_text("#repoHint"))
+    page.click("#clearBtn")
+    check("clear empties the field", page.input_value("#repo") == "" and page.is_hidden("#clearBtn"))
+    ctx.close()
+
+    # --- paste button ---
+    ctx = browser.new_context(permissions=["clipboard-read", "clipboard-write"])
+    page = ctx.new_page()
+    page.route("https://api.github.com/**", FakeGitHub().handle)
+    page.goto(PAGE)
+    check("paste button shown", page.is_visible("#pasteBtn"))
+    ok = page.evaluate("navigator.clipboard.writeText('https://github.com/owner/one').then(() => true, () => false)")
+    if ok:
+        page.click("#pasteBtn")
+        page.wait_for_function("document.getElementById('repoHint').textContent.startsWith('Found')")
+        check("paste fills and looks up the app", page.input_value("#repo") == "https://github.com/owner/one")
+    else:
+        print("SKIP paste (clipboard not available for file:// here)")
     ctx.close()
 
     # --- app directory ---
