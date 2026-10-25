@@ -416,6 +416,7 @@
     unleashed: { repo: "DarkFlippers/unleashed-firmware", re: /^unlshd-\d{3}[a-z]?$/ },
   };
   const VERSIONS_TTL = 6 * 3600 * 1000;
+  let versionsFailed = false;
 
   async function fetchVersions(fw) {
     const path = `/repos/${FW_SOURCES[fw].repo}/releases?per_page=40`;
@@ -426,9 +427,15 @@
       .map((r) => r.tag_name).slice(0, 30);
   }
 
+  const VER_HINT = "Versions are listed from each firmware's official releases. Pick the one your Flipper runs.";
+  const DEV_HINT = "Development builds always use the newest dev snapshot of each firmware, so there's no version to pick.";
+
   function fillVersionSelect(fw, list) {
     const sel = document.querySelector(`.fw-ver[data-fw="${fw}"]`);
-    const keep = sel.value;
+    sel._list = list;
+    if ($("channel").value === "dev") return; // shown again when switching back to stable
+    const keep = sel._keep || sel.value;
+    sel._keep = "";
     sel.innerHTML = `<option value="">${list.length ? "Latest (" + escapeHtml(list[0]) + ")" : "Latest"}</option>` +
       list.slice(1).map((v) => `<option value="${escapeHtml(v)}">${escapeHtml(v)}</option>`).join("");
     if (keep && list.includes(keep)) sel.value = keep;
@@ -447,12 +454,25 @@
       catch { failed = true; }
     }));
     if (!failed) store.set("versions", { ts: Date.now(), data });
-    else $("verHint").textContent = "Version lists didn't load. Latest still works; reload the page to try again.";
+    else {
+      versionsFailed = true;
+      $("verHint").textContent = "Version lists didn't load. Latest still works; reload the page to try again.";
+    }
   }
 
   function syncChannel() {
     const dev = $("channel").value === "dev";
-    document.querySelectorAll(".fw-ver").forEach((s) => { s.disabled = dev; });
+    document.querySelectorAll(".fw-ver").forEach((sel) => {
+      if (dev) {
+        if (!sel.disabled) sel._keep = sel.value;
+        sel.innerHTML = `<option value="">Newest dev build</option>`;
+        sel.disabled = true;
+      } else if (sel.disabled) {
+        sel.disabled = false;
+        fillVersionSelect(sel.dataset.fw, sel._list || []);
+      }
+    });
+    if (!versionsFailed) $("verHint").textContent = dev ? DEV_HINT : VER_HINT;
   }
   $("channel").addEventListener("change", syncChannel);
 
