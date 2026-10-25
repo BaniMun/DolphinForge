@@ -248,7 +248,7 @@
       </div>
       <div>
         <label for="appDir">App folder</label>
-        <input type="text" id="appDir" placeholder="Repo root" list="dirList" spellcheck="false" autocapitalize="off">
+        <input type="text" id="appDir" placeholder="Repo root (top folder)" list="dirList" spellcheck="false" autocapitalize="off">
         <datalist id="dirList"></datalist>
       </div>
     </div>
@@ -664,8 +664,8 @@
     try {
       const info = await readPublic(`/repos/${parsed.repo}`);
       if (my !== lookup) return;
+      setAuto("ref", $("ref").value.trim() || info.default_branch);
       const ref = $("ref").value.trim() || info.default_branch;
-      $("ref").placeholder = `${info.default_branch} (default)`;
       readPublic(`/repos/${parsed.repo}/branches?per_page=50`).then((br) => {
         if (my === lookup) $("refList").innerHTML = br.map((b) => `<option value="${escapeHtml(b.name)}">`).join("");
       }).catch(() => {});
@@ -684,7 +684,8 @@
       const file = await readPublic(`/repos/${parsed.repo}/contents/${dir ? dir + "/" : ""}application.fam?ref=${encodeURIComponent(ref)}`);
       if (my !== lookup) return;
       const app = famInfo(atob((file.content || "").replace(/\s/g, "")));
-      repoHint(app.name ? `Found ${app.name}${app.appid ? " (" + app.appid + ")" : ""}${dir ? " in " + dir : ""}.` : "Found the app.");
+      const where = dir ? ` in ${dir}` : " in the repo root";
+      repoHint(app.name ? `Found ${app.name}${app.appid ? " (" + app.appid + ")" : ""}${where}.` : `Found the app${where}.`);
     } catch (err) {
       if (my !== lookup) return;
       repoHint(err.status === 404 ? "Can't find this repo or branch. It has to be public." : "Couldn't look up the app: " + explain(err), true);
