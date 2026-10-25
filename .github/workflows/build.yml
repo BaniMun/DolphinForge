@@ -236,3 +236,22 @@ jobs:
             --title "${SRC} ${SRC_REF}" \
             --notes-file notes.md \
             --prerelease
+
+  cleanup:
+    # Uploaded apps live on a throwaway branch upload/<request_id>; remove it
+    # once the build is over, whatever the result.
+    needs: [prepare, build, release]
+    if: ${{ always() && startsWith(inputs.ref, 'upload/') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    permissions:
+      contents: write
+    steps:
+      - name: Delete upload branch
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          REQ_ID: ${{ inputs.request_id }}
+        run: |
+          if ! [[ "$REQ_ID" =~ ^[A-Za-z0-9-]{6,64}$ ]]; then echo "::error::Invalid request id"; exit 1; fi
+          gh api -X DELETE "repos/${GH_REPO}/git/refs/heads/upload/${REQ_ID}" || echo "Branch already gone"

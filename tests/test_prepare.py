@@ -79,6 +79,12 @@ check("only chosen fw archived", inc["momentum"]["sdk_url"].endswith("mntm-011.z
 check("reject momentum version on official", run("a/b", versions="official=mntm-010")[0] != 0)
 check("reject injected version", run("a/b", versions="unleashed=unlshd-090/../../x")[0] != 0)
 check("reject unknown fw in versions", run("a/b", versions="xtreme=1.0")[0] != 0)
+check("upload branch ref accepted", run("me/builder", ref="upload/mh3k2-ab12cd")[0] == 0)
+
+jobs = wf["jobs"]
+check("cleanup only for upload branches", "startsWith(inputs.ref, 'upload/')" in jobs["cleanup"]["if"])
+check("cleanup runs after everything", jobs["cleanup"]["needs"] == ["prepare", "build", "release"])
+check("build job is read-only", jobs["build"]["permissions"] == {"contents": "read"})
 
 print(f"\n{'ALL PASSED' if not fails else f'{fails} FAILED'}")
 sys.exit(1 if fails else 0)

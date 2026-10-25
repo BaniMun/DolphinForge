@@ -3,10 +3,13 @@
 usage: python3 tests/test_page.py [screenshot_dir]
 """
 import base64
+import io
 import json
 import pathlib
 import re
 import sys
+import tempfile
+import zipfile
 
 from playwright.sync_api import sync_playwright
 
@@ -25,8 +28,14 @@ def check(name, cond):
 class FakeGitHub:
     """Stateful fake of the few endpoints the page uses."""
 
-    def __init__(self, dispatch_status=204):
+    def __init__(self, dispatch_status=204, blob_status=201):
         self.dispatch_status = dispatch_status
+        self.blob_status = blob_status
+        self.blobs = []
+        self.tree = None
+        self.commit = None
+        self.created_ref = None
+        self.deleted_ref = None
         self.dispatched = None
         self.run_polls = 0
         self.list_polls = 0
@@ -84,6 +93,24 @@ class FakeGitHub:
             return reply({"message": "Bad credentials"}, 401)
         if path == "/repos/me/builder":
             return reply({"default_branch": "main"})
+        if path == "/repos/me/builder/git/blobs" and req.method == "POST":
+            if self.blob_status != 201:
+                return reply({"message": "Resource not accessible by personal access token"}, self.blob_status)
+            body = json.loads(req.post_data)
+            self.blobs.append(base64.b64decode(body["content"]))
+            return reply({"sha": f"blob{len(self.blobs)}"}, 201)
+        if path == "/repos/me/builder/git/trees" and req.method == "POST":
+            self.tree = json.loads(req.post_data)["tree"]
+            return reply({"sha": "tree1"}, 201)
+        if path == "/repos/me/builder/git/commits" and req.method == "POST":
+            self.commit = json.loads(req.post_data)
+            return reply({"sha": "commit1"}, 201)
+        if path == "/repos/me/builder/git/refs" and req.method == "POST":
+            self.created_ref = json.loads(req.post_data)
+            return reply({"ref": self.created_ref["ref"]}, 201)
+        if path.startswith("/repos/me/builder/git/refs/heads/") and req.method == "DELETE":
+            self.deleted_ref = path
+            return route.fulfill(status=204, headers={"access-control-allow-origin": "*"})
         if path.endswith("/dispatches") and req.method == "POST":
             if self.dispatch_status != 204:
                 return reply({"message": "nope"}, self.dispatch_status)
@@ -136,6 +163,8 @@ with sync_playwright() as p:
 
     check("hidden from search engines", "noindex" in (page.get_attribute("meta[name=robots]", "content") or ""))
     check("settings open when empty", page.locator("#setupDetails").get_attribute("open") is not None)
+    page.wait_for_function("document.getElementById('led').dataset.led === 'error'")
+    check("LED red without token", "repo and token" in page.inner_text("#ledText"))
     page.fill("#repo", "owner/app")
     page.click("#buildBtn")
     check("asks for settings first", "Repo and token" in page.inner_text("#formMsg"))
@@ -153,6 +182,8 @@ with sync_playwright() as p:
     page.fill("#token", "good-token")
     page.click("#saveSettings")
     check("settings saved", page.inner_text("#settingsState") == "Saved")
+    page.wait_for_function("document.getElementById('led').dataset.led === 'ready'")
+    check("LED green when ready", page.inner_text("#ledText") == "Ready")
 
     page.fill("#repo", "https://github.com/owner/app/tree/dev/apps/cfs")
     page.wait_for_function("document.getElementById('repoHint').textContent.startsWith('Found')")
@@ -180,6 +211,7 @@ with sync_playwright() as p:
     check("error text escaped", "<Foo>" not in page.inner_html("#errors"))
     check("log link for failure", page.locator("#errors a").get_attribute("href") == "https://gh/job/3")
     check("summary on screen", page.inner_text("#lcdSummary") == "2 of 3 built")
+    check("LED red after partial failure", page.get_attribute("#led", "data-led") == "fail")
     check("history shows partial", "◐" in page.inner_text("#history"))
     check("run link", page.locator("#runLink a").get_attribute("href") == "https://gh/run/77")
     check("button re-enabled", page.is_enabled("#buildBtn"))
@@ -205,6 +237,72 @@ with sync_playwright() as p:
     page.click("#buildBtn")
     page.wait_for_function("!document.getElementById('formMsg').hidden")
     check("bad token message", "token is invalid" in page.inner_text("#formMsg"))
+    check("LED shows rejected token", page.get_attribute("#led", "data-led") == "error")
+    ctx.close()
+
+    # --- upload scenarios ---
+    tmp = pathlib.Path(tempfile.mkdtemp())
+
+    def make_zip(name, files):
+        buf = io.BytesIO()
+        with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as z:
+            for path, data in files.items():
+                z.writestr(path, data)
+        (tmp / name).write_bytes(buf.getvalue())
+        return str(tmp / name)
+
+    good_zip = make_zip("my_app.zip", {
+        "my_app/application.fam": 'App(appid="cfs_tag_writer", name="CFS Tag Writer")',
+        "my_app/app.c": "int main(void) { return 0; }\n" * 50,
+        "my_app/.DS_Store": "junk",
+        "__MACOSX/my_app/._app.c": "junk",
+    })
+    bad_zip = make_zip("no_fam.zip", {"src/app.c": "int x;"})
+
+    def upload_page(fake):
+        c = browser.new_context()
+        pg = c.new_page()
+        pg.route("https://api.github.com/**", fake.handle)
+        pg.add_init_script("const _st = window.setTimeout; window.setTimeout = (f, ms, ...a) => _st(f, Math.min(ms || 0, 20), ...a);")
+        pg.goto(PAGE)
+        pg.fill("#builderRepo", "me/builder")
+        pg.fill("#token", "good-token")
+        pg.click("#saveSettings")
+        pg.click("#srcUploadBtn")
+        return c, pg
+
+    gh = FakeGitHub()
+    ctx, page = upload_page(gh)
+    check("upload panel shown", page.is_visible("#drop") and not page.is_visible("#repo"))
+    page.set_input_files("#upFiles", bad_zip)
+    page.wait_for_function("!document.getElementById('formMsg').hidden")
+    check("zip without application.fam rejected", "No application.fam" in page.inner_text("#formMsg"))
+    page.set_input_files("#upFiles", good_zip)
+    page.wait_for_selector("#upSummary:not([hidden])")
+    summary = page.inner_text("#upSummary")
+    check("upload summary", "CFS Tag Writer (cfs_tag_writer)" in summary and "2 files" in summary)
+    page.click("#buildBtn")
+    page.wait_for_selector("#files a.file", timeout=15000)
+    check("junk files skipped, app re-rooted", sorted(t["path"] for t in gh.tree) == ["app.c", "application.fam"])
+    check("file contents uploaded", any(b.startswith(b"int main") for b in gh.blobs))
+    check("orphan commit", gh.commit["parents"] == [])
+    rid = gh.dispatched["inputs"]["request_id"]
+    check("upload branch created", gh.created_ref["ref"] == f"refs/heads/upload/{rid}")
+    inp = gh.dispatched["inputs"]
+    check("build points at upload branch", (inp["repo"], inp["ref"], inp["app_dir"]) == ("me/builder", f"upload/{rid}", ""))
+    check("screen shows upload name", page.inner_text("#statusTitle") == "CFS Tag Writer (upload)")
+    check("history shows upload", "CFS Tag Writer (upload)" in page.inner_text("#history"))
+    ctx.close()
+
+    gh = FakeGitHub(blob_status=403)
+    ctx, page = upload_page(gh)
+    page.set_input_files("#upFiles", good_zip)
+    page.wait_for_selector("#upSummary:not([hidden])")
+    page.click("#buildBtn")
+    page.wait_for_function("!document.getElementById('formMsg').hidden")
+    check("missing Contents write explained", "Contents set to read and write" in page.inner_text("#formMsg"))
+    check("no build dispatched without upload", gh.dispatched is None)
+    check("LED red when upload fails", page.get_attribute("#led", "data-led") == "error")
     ctx.close()
 
     # --- autofill scenarios ---

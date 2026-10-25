@@ -78,6 +78,16 @@
   .lcd .summary { margin: 10px 0 0; font-size: 17px; }
   @media (prefers-reduced-motion: reduce) { .lcd-row[data-state="run"] .st::after { animation: none; content: "..."; } }
 
+  /* status LED on the shell, like the Flipper's RGB LED */
+  .device-foot { display: flex; align-items: center; gap: 10px; padding: 12px 6px 0; color: #9a9ca3; font-size: 14px; }
+  .led { width: 10px; height: 10px; border-radius: 50%; background: #4a4b50; flex: none; }
+  .led[data-led="ready"] { background: #3ddc6a; box-shadow: 0 0 8px #3ddc6a; }
+  .led[data-led="busy"] { background: #3a8bff; box-shadow: 0 0 8px #3a8bff; animation: blink 1s steps(2, jump-none) infinite; }
+  .led[data-led="error"] { background: #ff4b3e; box-shadow: 0 0 8px #ff4b3e; animation: blink 1.4s steps(2, jump-none) infinite; }
+  .led[data-led="fail"] { background: #ff4b3e; box-shadow: 0 0 8px #ff4b3e; }
+  @keyframes blink { 50% { opacity: .2; box-shadow: none; } }
+  @media (prefers-reduced-motion: reduce) { .led { animation: none !important; } }
+
   /* ---------- results under the screen ---------- */
   .results { margin: -10px 0 32px; display: grid; gap: 10px; }
   .file {
@@ -135,6 +145,20 @@
   button:disabled { opacity: .5; cursor: default; }
   #formMsg { margin-top: 12px; }
 
+  .source { display: grid; grid-template-columns: 1fr 1fr; border: 2px solid var(--ink); border-radius: 999px; padding: 3px; margin-bottom: 22px; }
+  .source button { border: 0; padding: 10px; font-size: 16px; }
+  .source button[aria-pressed="true"] { background: var(--ink); color: var(--body); }
+  .drop {
+    border: 2px dashed var(--line); border-radius: 12px; padding: 20px 16px; text-align: center;
+  }
+  .drop.over { border-color: var(--ink); }
+  .drop p { margin: 0 0 12px; color: var(--muted); font-size: 15px; }
+  .drop .picks { display: flex; flex-wrap: wrap; gap: 10px; justify-content: center; }
+  .pick { position: relative; display: inline-block; border: 2px solid var(--ink); border-radius: 999px; padding: 10px 18px; font-weight: 600; font-size: 16px; cursor: pointer; margin: 0; }
+  .pick input { position: absolute; inset: 0; opacity: 0; cursor: pointer; width: 100%; }
+  .pick:focus-within { outline: 3px solid var(--lcd); outline-offset: 2px; }
+  .up-summary { margin-top: 12px; font-weight: 500; }
+
   /* ---------- lower sections ---------- */
   .section { margin-top: 44px; }
   .history-item { display: flex; justify-content: space-between; gap: 12px; padding: 10px 0; border-top: 1px solid var(--line); }
@@ -181,6 +205,10 @@
         <p class="summary" id="lcdSummary"></p>
       </div>
     </div>
+    <div class="device-foot">
+      <span class="led" id="led" data-led="off" role="img" aria-label="Status"></span>
+      <span id="ledText">Checking…</span>
+    </div>
   </div>
 
   <div class="results" id="statusBox" hidden>
@@ -191,6 +219,24 @@
   </div>
 
   <form id="buildForm" autocomplete="off">
+    <div class="source" role="group" aria-label="Where the app comes from">
+      <button type="button" id="srcGithubBtn" aria-pressed="true">From GitHub</button>
+      <button type="button" id="srcUploadBtn" aria-pressed="false">Upload files</button>
+    </div>
+
+    <div id="srcUpload" hidden>
+      <div class="drop" id="drop">
+        <p>Drop a .zip with the app here, or choose it below. On a computer you can pick the whole folder.</p>
+        <div class="picks">
+          <label class="pick">Choose .zip or files<input type="file" id="upFiles" multiple></label>
+          <label class="pick" id="pickFolder">Choose folder<input type="file" id="upFolder" webkitdirectory multiple></label>
+        </div>
+      </div>
+      <p class="up-summary" id="upSummary" hidden></p>
+      <p class="hint" id="upHint">Needs application.fam inside. Up to 20 MB and 800 files.</p>
+    </div>
+
+    <div id="srcGithub">
     <label for="repo">App on GitHub</label>
     <input type="text" id="repo" placeholder="github.com/owner/app" required spellcheck="false" autocapitalize="off">
     <p class="hint" id="repoHint" hidden></p>
@@ -205,6 +251,7 @@
         <input type="text" id="appDir" placeholder="Repo root" list="dirList" spellcheck="false" autocapitalize="off">
         <datalist id="dirList"></datalist>
       </div>
+    </div>
     </div>
 
     <label>Firmware and version</label>
@@ -246,7 +293,7 @@
       <input type="text" id="builderRepo" placeholder="login/DolphinForge" spellcheck="false" autocapitalize="off">
       <label for="token">GitHub token</label>
       <input type="password" id="token" placeholder="github_pat_…" spellcheck="false" autocapitalize="off">
-      <p class="hint">Fine-grained token for this repo only, with Actions set to read and write and Contents set to read-only. It stays in this browser.</p>
+      <p class="hint">Fine-grained token for this repo only, with Actions and Contents set to read and write (Contents write is only used for uploads). It stays in this browser.</p>
       <div class="save-row">
         <button id="saveSettings" type="button">Save</button>
         <span id="settingsState"></span>
@@ -282,6 +329,26 @@
   tick();
   setInterval(tick, 30000);
 
+  // ---------- status LED ----------
+  let busy = false;
+  function setLed(state, text) {
+    $("led").dataset.led = state;
+    $("led").setAttribute("aria-label", text);
+    $("ledText").textContent = text;
+  }
+  async function checkReady() {
+    if (busy) return;
+    if (!settings.builderRepo || !settings.token) return setLed("error", "Add your repo and token at the bottom");
+    setLed("off", "Checking…");
+    try {
+      await gh(`/repos/${settings.builderRepo}`);
+      if (!busy) setLed("ready", "Ready");
+    } catch (err) {
+      if (busy) return;
+      setLed("error", err.status === 401 ? "Token rejected" : err.status === 404 ? "Repo not found" : "GitHub unreachable");
+    }
+  }
+
   // ---------- settings ----------
   function guessBuilderRepo() {
     const host = location.hostname;
@@ -302,6 +369,7 @@
     $("settingsState").textContent = ok ? "Saved" : "Saved until this tab is closed";
     defaultBranch = null;
     if (settings.builderRepo && settings.token) setTimeout(() => { $("setupDetails").open = false; }, 600);
+    checkReady();
   });
 
   // ---------- GitHub API ----------
@@ -408,6 +476,153 @@
     el.hidden = !text;
   }
 
+  // ---------- source: GitHub link or uploaded files ----------
+  let source = "github";
+  let upload = null;
+  function setSource(src) {
+    source = src;
+    $("srcGithubBtn").setAttribute("aria-pressed", String(src === "github"));
+    $("srcUploadBtn").setAttribute("aria-pressed", String(src === "upload"));
+    $("srcGithub").hidden = src !== "github";
+    $("srcUpload").hidden = src !== "upload";
+    $("repo").required = src === "github";
+    document.querySelector("#lcdIdle .idle-line").textContent = src === "github"
+      ? "Paste a Flipper app link below and press Build."
+      : "Upload your app below and press Build.";
+    showMsg($("formMsg"), "");
+  }
+  $("srcGithubBtn").addEventListener("click", () => setSource("github"));
+  $("srcUploadBtn").addEventListener("click", () => setSource("upload"));
+  if (matchMedia("(pointer: coarse)").matches) $("pickFolder").hidden = true; // phones can't pick folders
+
+  const MAX_BYTES = 20 * 1024 * 1024;
+  const MAX_FILES = 800;
+  const SKIP = /(^|\/)(__MACOSX|\.git|\.DS_Store|Thumbs\.db|dist|\.vscode|\.idea)(\/|$)/;
+
+  // Minimal .zip reader (stored + deflate) built on the browser's DecompressionStream.
+  async function unzip(buf) {
+    const u8 = new Uint8Array(buf);
+    const dv = new DataView(buf);
+    let eocd = -1;
+    for (let i = u8.length - 22; i >= Math.max(0, u8.length - 65557); i--) {
+      if (dv.getUint32(i, true) === 0x06054b50) { eocd = i; break; }
+    }
+    if (eocd < 0) throw new Error("This isn't a valid .zip file.");
+    const count = dv.getUint16(eocd + 10, true);
+    let off = dv.getUint32(eocd + 16, true);
+    const out = [];
+    for (let n = 0; n < count; n++) {
+      if (dv.getUint32(off, true) !== 0x02014b50) throw new Error("This .zip file is damaged.");
+      const flags = dv.getUint16(off + 8, true);
+      const method = dv.getUint16(off + 10, true);
+      const csize = dv.getUint32(off + 20, true);
+      const nlen = dv.getUint16(off + 28, true);
+      const xlen = dv.getUint16(off + 30, true);
+      const clen = dv.getUint16(off + 32, true);
+      const lho = dv.getUint32(off + 42, true);
+      const name = new TextDecoder().decode(u8.subarray(off + 46, off + 46 + nlen));
+      off += 46 + nlen + xlen + clen;
+      if (name.endsWith("/")) continue;
+      if (flags & 1) throw new Error("Password-protected .zip files aren't supported.");
+      const start = lho + 30 + dv.getUint16(lho + 26, true) + dv.getUint16(lho + 28, true);
+      const raw = u8.subarray(start, start + csize);
+      let data;
+      if (method === 0) data = raw.slice();
+      else if (method === 8) {
+        const stream = new Blob([raw]).stream().pipeThrough(new DecompressionStream("deflate-raw"));
+        data = new Uint8Array(await new Response(stream).arrayBuffer());
+      } else throw new Error(`${name} uses a compression this page can't open. Re-zip it with standard settings.`);
+      out.push({ path: name, data });
+    }
+    return out;
+  }
+
+  async function collectFiles(fileList) {
+    const list = [...fileList];
+    if (!list.length) return null;
+    let entries = [];
+    let label = list[0].webkitRelativePath ? list[0].webkitRelativePath.split("/")[0] : list[0].name;
+    if (list.length === 1 && /\.zip$/i.test(list[0].name)) {
+      entries = await unzip(await list[0].arrayBuffer());
+    } else {
+      for (const f of list) entries.push({ path: f.webkitRelativePath || f.name, data: new Uint8Array(await f.arrayBuffer()) });
+      if (list.length > 1 && !list[0].webkitRelativePath) label = `${list.length} files`;
+    }
+    entries = entries
+      .map((e) => ({ ...e, path: e.path.replace(/\\/g, "/").replace(/^\/+/, "") }))
+      .filter((e) => e.path && !SKIP.test(e.path) && !e.path.split("/").includes(".."));
+
+    const fams = entries.filter((e) => /(^|\/)application\.fam$/.test(e.path))
+      .sort((a, b) => a.path.split("/").length - b.path.split("/").length);
+    if (!fams.length) throw new Error("No application.fam in these files. Upload the folder that contains it.");
+    // Re-root at the app folder, so the build always runs from the top.
+    const appDir = fams[0].path.replace(/\/?application\.fam$/, "");
+    if (appDir) {
+      entries = entries.filter((e) => e.path.startsWith(appDir + "/")).map((e) => ({ ...e, path: e.path.slice(appDir.length + 1) }));
+    }
+    const size = entries.reduce((n, e) => n + e.data.length, 0);
+    if (size > MAX_BYTES) throw new Error("The app is bigger than 20 MB. Leave out build output and assets you don't need.");
+    if (entries.length > MAX_FILES) throw new Error(`The app has ${entries.length} files; the limit is ${MAX_FILES}.`);
+    const app = famInfo(new TextDecoder().decode(fams[0].data));
+    return { files: entries, label, size, appName: app.name, appid: app.appid, extraApps: fams.length - 1 };
+  }
+
+  async function takeFiles(fileList) {
+    upload = null;
+    $("upSummary").hidden = true;
+    showMsg($("formMsg"), "");
+    try {
+      const up = await collectFiles(fileList);
+      if (!up) return;
+      upload = up;
+      $("upSummary").textContent = `${up.appName || up.label}${up.appid ? " (" + up.appid + ")" : ""} · ` +
+        `${up.files.length} files, ${(up.size / 1024).toFixed(0)} KB` +
+        (up.extraApps ? `. Found ${up.extraApps + 1} apps; using the one at the top.` : "");
+      $("upSummary").hidden = false;
+    } catch (err) {
+      showMsg($("formMsg"), err.message || String(err));
+    }
+  }
+  $("upFiles").addEventListener("change", (e) => takeFiles(e.target.files));
+  $("upFolder").addEventListener("change", (e) => takeFiles(e.target.files));
+  ["dragenter", "dragover"].forEach((t) => $("drop").addEventListener(t, (e) => { e.preventDefault(); $("drop").classList.add("over"); }));
+  ["dragleave", "drop"].forEach((t) => $("drop").addEventListener(t, () => $("drop").classList.remove("over")));
+  $("drop").addEventListener("drop", (e) => { e.preventDefault(); takeFiles(e.dataTransfer.files); });
+
+  function toBase64(bytes) {
+    let bin = "";
+    for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
+    return btoa(bin);
+  }
+
+  // Put the files on a fresh, parentless branch of the DolphinForge repo.
+  async function pushUpload(branch, files) {
+    const repo = settings.builderRepo;
+    const shas = new Array(files.length);
+    let next = 0, done = 0;
+    async function worker() {
+      while (next < files.length) {
+        const k = next++;
+        const blob = await gh(`/repos/${repo}/git/blobs`, {
+          method: "POST", body: JSON.stringify({ content: toBase64(files[k].data), encoding: "base64" }),
+        });
+        shas[k] = blob.sha;
+        setLed("busy", `Uploading ${++done} of ${files.length}`);
+      }
+    }
+    await Promise.all(Array.from({ length: Math.min(6, files.length) }, worker));
+    const tree = await gh(`/repos/${repo}/git/trees`, {
+      method: "POST",
+      body: JSON.stringify({ tree: files.map((f, k) => ({ path: f.path, mode: "100644", type: "blob", sha: shas[k] })) }),
+    });
+    const commit = await gh(`/repos/${repo}/git/commits`, {
+      method: "POST", body: JSON.stringify({ message: `Upload for ${branch}`, tree: tree.sha, parents: [] }),
+    });
+    await gh(`/repos/${repo}/git/refs`, {
+      method: "POST", body: JSON.stringify({ ref: `refs/heads/${branch}`, sha: commit.sha }),
+    });
+  }
+
   // ---------- autofill from the pasted link ----------
   // Reads the app repo (public, read-only): default branch, branches, and every
   // application.fam, so branch and folder fill themselves in.
@@ -491,12 +706,23 @@
       $("setupDetails").open = true;
       return showMsg($("formMsg"), "Add your repo and token under Repo and token first.");
     }
-    const parsed = normRepo($("repo").value);
-    if (!/^[A-Za-z0-9-]+\/[A-Za-z0-9._-]+$/.test(parsed.repo)) {
-      return showMsg($("formMsg"), "Enter the app as owner/name or paste its GitHub link.");
+    const requestId = Date.now().toString(36) + "-" + Math.random().toString(36).slice(2, 8);
+    let repo, ref, dir, label;
+    if (source === "upload") {
+      if (!upload) return showMsg($("formMsg"), "Choose a .zip or a folder with the app first.");
+      repo = settings.builderRepo;
+      ref = `upload/${requestId}`;
+      dir = "";
+      label = `${upload.appName || upload.label} (upload)`;
+    } else {
+      const parsed = normRepo($("repo").value);
+      if (!/^[A-Za-z0-9-]+\/[A-Za-z0-9._-]+$/.test(parsed.repo)) {
+        return showMsg($("formMsg"), "Enter the app as owner/name or paste its GitHub link.");
+      }
+      repo = parsed.repo;
+      ref = $("ref").value.trim() || parsed.ref || "";
+      dir = $("appDir").value.trim() || parsed.dir || "";
     }
-    const ref = $("ref").value.trim() || parsed.ref || "";
-    const dir = $("appDir").value.trim() || parsed.dir || "";
     const fws = [...document.querySelectorAll("#fwChips input:checked")].map((i) => i.value);
     if (!fws.length) return showMsg($("formMsg"), "Select at least one firmware.");
 
@@ -508,15 +734,28 @@
         if (v) versions[fw] = v;
       });
     }
-    const requestId = Date.now().toString(36) + "-" + Math.random().toString(36).slice(2, 8);
     const build = {
-      id: requestId, repo: parsed.repo, ref, dir, fws, channel, versions,
-      started: Date.now(), runId: null, state: "queued",
+      id: requestId, repo, ref, dir, fws, channel, versions, label,
+      upload: source === "upload", started: Date.now(), runId: null, state: "queued",
     };
 
     $("buildBtn").disabled = true;
+    busy = true;
+    let uploaded = false;
     try {
       const branch = await getDefaultBranch();
+      if (build.upload) {
+        setLed("busy", "Uploading…");
+        try { await pushUpload(build.ref, upload.files); }
+        catch (err) {
+          if (err.status === 403 || err.status === 404) {
+            err.message = "Uploading needs Contents set to read and write on your token.";
+            err.status = 0;
+          }
+          throw err;
+        }
+        uploaded = true;
+      }
       await gh(`/repos/${settings.builderRepo}/actions/workflows/${WORKFLOW}/dispatches`, {
         method: "POST",
         body: JSON.stringify({
@@ -532,8 +771,11 @@
       saveHistory(build);
       track(build);
     } catch (err) {
+      if (uploaded) gh(`/repos/${settings.builderRepo}/git/refs/heads/${build.ref}`, { method: "DELETE" }).catch(() => {});
       showMsg($("formMsg"), explain(err));
       $("buildBtn").disabled = false;
+      busy = false;
+      setLed("error", "Build didn't start");
     }
   });
 
@@ -602,7 +844,9 @@
     $("lcdTopName").hidden = false;
     $("lcdBuild").hidden = false;
     $("statusBox").hidden = false;
-    $("statusTitle").textContent = `${build.repo}${build.ref ? " @ " + build.ref : ""}`;
+    $("statusTitle").textContent = build.label || `${build.repo}${build.ref ? " @ " + build.ref : ""}`;
+    busy = true;
+    setLed("busy", "Building");
     $("lcdSummary").textContent = "";
     $("files").innerHTML = "";
     $("errors").innerHTML = "";
@@ -637,9 +881,9 @@
       }
       await showFiles(build);
     } catch (err) {
-      if (my === tracking) showMsg($("statusMsg"), explain(err));
+      if (my === tracking) { showMsg($("statusMsg"), explain(err)); setLed("error", "Lost track of the build"); }
     } finally {
-      if (my === tracking) $("buildBtn").disabled = false;
+      if (my === tracking) { $("buildBtn").disabled = false; busy = false; }
     }
   }
 
@@ -653,10 +897,13 @@
       build.files = assets.map((a) => ({ name: a.name, url: a.browser_download_url }));
       build.state = assets.length === build.fws.length ? "ok" : assets.length ? "partial" : "bad";
       $("lcdSummary").textContent = `${assets.length} of ${build.fws.length} built`;
+      if (build.state === "ok") setLed("ready", "Built");
+      else setLed("fail", assets.length ? "Some builds failed" : "Build failed");
       if (assets.length) showMsg($("statusMsg"), "Copy the file for your firmware to apps/ on the SD card with qFlipper or the Flipper app.", true);
     } catch (err) {
       build.state = "bad";
       $("lcdSummary").textContent = `0 of ${build.fws.length} built`;
+      setLed("fail", "Build failed");
       if (err.status === 404) showMsg($("statusMsg"), "Nothing built. Open the build log above to see why.");
       else showMsg($("statusMsg"), explain(err));
     }
@@ -677,7 +924,7 @@
     const icon = { ok: "✓", partial: "◐", bad: "✕" };
     $("history").innerHTML = list.map((b) => `
       <div class="history-item">
-        <span>${icon[b.state] || "…"} <a href="#" data-id="${b.id}">${escapeHtml(b.repo)}</a>${b.ref ? " <span class='when'>@ " + escapeHtml(b.ref) + "</span>" : ""}</span>
+        <span>${icon[b.state] || "…"} <a href="#" data-id="${b.id}">${escapeHtml(b.label || b.repo)}</a>${b.ref && !b.upload ? " <span class='when'>@ " + escapeHtml(b.ref) + "</span>" : ""}</span>
         <span class="when">${new Date(b.started).toLocaleString(undefined, { dateStyle: "short", timeStyle: "short" })}</span>
       </div>`).join("");
   }
@@ -688,7 +935,7 @@
     e.preventDefault();
     const b = store.get("history", []).find((x) => x.id === a.dataset.id);
     if (!b) return;
-    $("repo").value = b.repo; $("ref").value = b.ref || ""; $("appDir").value = b.dir || "";
+    if (!b.upload) { setSource("github"); $("repo").value = b.repo; $("ref").value = b.ref || ""; $("appDir").value = b.dir || ""; }
     $("buildBtn").disabled = true;
     track(b);
     window.scrollTo({ top: 0, behavior: "smooth" });
@@ -697,6 +944,7 @@
   renderHistory();
   syncChannel();
   loadVersions();
+  checkReady();
 })();
 </script>
 </body>
