@@ -11,6 +11,12 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600&family=Pixelify+Sans:wght@400;600&display=swap" rel="stylesheet">
+<script>
+  try {
+    const t = JSON.parse(localStorage.getItem("dforge.theme") || '"auto"');
+    if (t === "light" || t === "dark") document.documentElement.dataset.theme = t;
+  } catch { /* storage unavailable: follow the system */ }
+</script>
 <style>
   :root {
     --body: #e3e4e6;        /* white Flipper shell */
@@ -27,7 +33,7 @@
     --sans: "Barlow", system-ui, -apple-system, "Segoe UI", sans-serif;
   }
   @media (prefers-color-scheme: dark) {
-    :root {
+    :root:not([data-theme="light"]) {
       --body: #202124;      /* black / transparent Flipper shell */
       --field: #2b2c30;
       --ink: #ececee;
@@ -36,6 +42,15 @@
       --bezel: #0d0d0f;
       --bad: #ff7b72;
     }
+  }
+  :root[data-theme="dark"] {
+      --body: #202124;      /* black / transparent Flipper shell */
+      --field: #2b2c30;
+      --ink: #ececee;
+      --muted: #9a9ca3;
+      --line: #3d3f44;
+      --bezel: #0d0d0f;
+      --bad: #ff7b72;
   }
   * { box-sizing: border-box; }
   html { -webkit-text-size-adjust: 100%; }
@@ -82,6 +97,12 @@
 
   /* status LED on the shell, like the Flipper's RGB LED */
   .device-foot { display: flex; align-items: center; gap: 10px; padding: 12px 6px 0; color: #9a9ca3; font-size: 14px; }
+  .theme-btn {
+    margin-left: auto; display: inline-flex; align-items: center; gap: 6px;
+    border: 2px solid #4a4b50; color: #c3c5ca; background: transparent;
+    padding: 5px 12px; font-size: 13px; font-weight: 500; border-radius: 999px;
+  }
+  .theme-btn svg { width: 14px; height: 14px; }
   .led { width: 10px; height: 10px; border-radius: 50%; background: #4a4b50; flex: none; }
   .led[data-led="ready"] { background: #3ddc6a; box-shadow: 0 0 8px #3ddc6a; }
   .led[data-led="busy"] { background: #3a8bff; box-shadow: 0 0 8px #3a8bff; animation: blink 1s steps(2, jump-none) infinite; }
@@ -265,6 +286,10 @@
     <div class="device-foot">
       <span class="led" id="led" data-led="off" role="img" aria-label="Status"></span>
       <span id="ledText">Checking…</span>
+      <button type="button" class="theme-btn" id="themeBtn" aria-label="Theme">
+        <svg id="themeIcon" viewBox="0 0 7 7" shape-rendering="crispEdges" fill="currentColor" aria-hidden="true"></svg>
+        <span id="themeLabel">Auto</span>
+      </button>
     </div>
   </div>
 
@@ -402,6 +427,34 @@
   }
   tick();
   setInterval(tick, 30000);
+
+  // ---------- theme: auto (follow the phone), light or dark ----------
+  const THEMES = ["auto", "light", "dark"];
+  const THEME_ICONS = {
+    auto: '<rect x="1" y="1" width="5" height="5" fill="none" stroke="currentColor"/><rect x="1" y="1" width="2.5" height="5"/>',
+    light: '<rect x="3" y="0" width="1" height="1"/><rect x="3" y="6" width="1" height="1"/><rect x="0" y="3" width="1" height="1"/><rect x="6" y="3" width="1" height="1"/><rect x="2" y="2" width="3" height="3"/>',
+    dark: '<rect x="2" y="0" width="3" height="1"/><rect x="1" y="1" width="2" height="1"/><rect x="1" y="2" width="1" height="3"/><rect x="1" y="5" width="2" height="1"/><rect x="2" y="6" width="4" height="1"/><rect x="5" y="5" width="2" height="1"/>',
+  };
+  const META_COLORS = { light: "#e3e4e6", dark: "#202124" };
+  const themeMetas = [...document.querySelectorAll('meta[name="theme-color"]')];
+  themeMetas.forEach((m) => { m.dataset.orig = m.content; });
+
+  function applyTheme(t) {
+    if (t === "auto") delete document.documentElement.dataset.theme;
+    else document.documentElement.dataset.theme = t;
+    themeMetas.forEach((m) => { m.content = t === "auto" ? m.dataset.orig : META_COLORS[t]; });
+    $("themeIcon").innerHTML = THEME_ICONS[t];
+    $("themeLabel").textContent = t[0].toUpperCase() + t.slice(1);
+    $("themeBtn").setAttribute("aria-label", `Theme: ${t}. Tap to change.`);
+  }
+  let theme = store.get("theme", "auto");
+  if (!THEMES.includes(theme)) theme = "auto";
+  applyTheme(theme);
+  $("themeBtn").addEventListener("click", () => {
+    theme = THEMES[(THEMES.indexOf(theme) + 1) % THEMES.length];
+    store.set("theme", theme);
+    applyTheme(theme);
+  });
 
   // ---------- status LED ----------
   let busy = false;
@@ -655,7 +708,7 @@
 
   const MAX_BYTES = 20 * 1024 * 1024;
   const MAX_FILES = 800;
-  const SKIP = /(^|\/)(__MACOSX|\.git|\.DS_Store|Thumbs\.db|dist|\.vscode|\.idea)(\/|$)/;
+  const SKIP = /(^|\/)(__MACOSX|\.git|\.github|\.DS_Store|Thumbs\.db|dist|\.vscode|\.idea)(\/|$)/;
 
   // Minimal .zip reader (stored + deflate) built on the browser's DecompressionStream.
   async function unzip(buf) {

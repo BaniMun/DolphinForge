@@ -333,6 +333,7 @@ with sync_playwright() as p:
         "my_app/application.fam": 'App(appid="cfs_tag_writer", name="CFS Tag Writer")',
         "my_app/app.c": "int main(void) { return 0; }\n" * 50,
         "my_app/.DS_Store": "junk",
+        "my_app/.github/workflows/build.yml": "on: push",
         "__MACOSX/my_app/._app.c": "junk",
     })
     bad_zip = make_zip("no_fam.zip", {"src/app.c": "int x;"})
@@ -409,6 +410,32 @@ with sync_playwright() as p:
     check("missing repo explained", "Can't find" in page.inner_text("#repoHint"))
     page.click("#clearBtn")
     check("clear empties the field", page.input_value("#repo") == "" and page.is_hidden("#clearBtn"))
+    ctx.close()
+
+    # --- theme switch ---
+    ctx = browser.new_context(color_scheme="light")
+    page = ctx.new_page()
+    page.route("https://api.github.com/**", FakeGitHub().handle)
+    page.goto(PAGE)
+    bg = lambda: page.evaluate("getComputedStyle(document.body).backgroundColor")
+    check("auto follows the phone (light)", page.inner_text("#themeLabel") == "Auto" and bg() == "rgb(227, 228, 230)")
+    page.click("#themeBtn")
+    check("light forced", page.get_attribute("html", "data-theme") == "light" and bg() == "rgb(227, 228, 230)")
+    page.click("#themeBtn")
+    check("dark forced", page.get_attribute("html", "data-theme") == "dark" and bg() == "rgb(32, 33, 36)")
+    check("browser bar follows", page.get_attribute('meta[media="(prefers-color-scheme: light)"]', "content") == "#202124")
+    page.reload()
+    check("theme remembered", page.get_attribute("html", "data-theme") == "dark" and page.inner_text("#themeLabel") == "Dark")
+    page.click("#themeBtn")
+    check("back to auto", page.get_attribute("html", "data-theme") is None and bg() == "rgb(227, 228, 230)")
+    ctx.close()
+    ctx = browser.new_context(color_scheme="dark")
+    page = ctx.new_page()
+    page.route("https://api.github.com/**", FakeGitHub().handle)
+    page.goto(PAGE)
+    check("auto follows the phone (dark)", page.evaluate("getComputedStyle(document.body).backgroundColor") == "rgb(32, 33, 36)")
+    page.click("#themeBtn")
+    check("light beats a dark phone", page.evaluate("getComputedStyle(document.body).backgroundColor") == "rgb(227, 228, 230)")
     ctx.close()
 
     # --- paste button ---
