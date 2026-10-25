@@ -1,4 +1,4 @@
-name: Build FAP
+name: DolphinForge build
 # Builds a Flipper Zero app (.fap) from any public GitHub repo for the chosen
 # firmwares and publishes the files as a GitHub Release tagged build-<request_id>.
 # Started by the web page (index.html) through the workflow_dispatch API.

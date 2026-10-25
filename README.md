@@ -1,4 +1,4 @@
-# FAP Builder
+# DolphinForge
 
 Kompilator aplikacji `.fap` dla Flipper Zero, działający na GitHub Pages i GitHub Actions.
 Podajesz link do repo aplikacji, wybierasz firmware (Official, Momentum, Unleashed) i dostajesz

@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>FAP Builder</title>
+<title>DolphinForge</title>
 <meta name="description" content="Kompilator aplikacji .fap dla Flipper Zero: Official, Momentum, Unleashed.">
 <style>
   :root {
@@ -93,7 +93,7 @@
 <body>
 <main>
   <header>
-    <h1>FAP <span>Builder</span></h1>
+    <h1>Dolphin<span>Forge</span></h1>
     <small>Flipper Zero · Official · Momentum · Unleashed</small>
   </header>
 
@@ -101,7 +101,7 @@
     <details id="setupDetails">
       <summary>Ustawienia</summary>
       <label for="builderRepo">Repo z kompilatorem (Twoje)</label>
-      <input type="text" id="builderRepo" placeholder="login/flipper-builder" autocomplete="off" spellcheck="false">
+      <input type="text" id="builderRepo" placeholder="login/DolphinForge" autocomplete="off" spellcheck="false">
       <label for="token">Token GitHub</label>
       <input type="password" id="token" placeholder="github_pat_..." autocomplete="off" spellcheck="false">
       <div class="hint">Fine-grained token tylko do repo kompilatora: <b>Actions: Read and write</b>, <b>Contents: Read-only</b>. Zostaje wyłącznie w tej przeglądarce.</div>
@@ -166,11 +166,11 @@
   // ---------- storage (per-browser, may be unavailable) ----------
   const store = {
     get(key, fallback) {
-      try { const v = localStorage.getItem("fapb." + key); return v === null ? fallback : JSON.parse(v); }
+      try { const v = localStorage.getItem("dforge." + key); return v === null ? fallback : JSON.parse(v); }
       catch { return fallback; }
     },
     set(key, value) {
-      try { localStorage.setItem("fapb." + key, JSON.stringify(value)); return true; }
+      try { localStorage.setItem("dforge." + key, JSON.stringify(value)); return true; }
       catch { return false; }
     },
   };
