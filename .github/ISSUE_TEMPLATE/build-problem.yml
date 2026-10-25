@@ -1,0 +1,37 @@
+name: Build problem
+description: An app didn't build, or the .fap doesn't work on your Flipper
+title: "Build problem: "
+labels: [build]
+body:
+  - type: input
+    id: app
+    attributes:
+      label: App
+      description: GitHub repo, with branch and folder if you set them, or "uploaded files".
+    validations:
+      required: true
+  - type: input
+    id: firmware
+    attributes:
+      label: Firmware and version
+      placeholder: Momentum mntm-012
+    validations:
+      required: true
+  - type: textarea
+    id: error
+    attributes:
+      label: Error from DolphinForge
+      render: text
+  - type: textarea
+    id: details
+    attributes:
+      label: What happened
+      description: Anything else, for example what the app does on the Flipper.
+  - type: input
+    id: run
+    attributes:
+      label: Build link
+  - type: input
+    id: device
+    attributes:
+      label: Device and browser

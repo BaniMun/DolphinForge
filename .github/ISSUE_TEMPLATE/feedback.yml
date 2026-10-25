@@ -1,0 +1,17 @@
+name: Feedback
+description: Ideas, things that got in your way, or anything else about DolphinForge
+title: "Feedback: "
+labels: [feedback]
+body:
+  - type: textarea
+    id: feedback
+    attributes:
+      label: Your feedback
+      description: What worked, what didn't, what you'd like to see next.
+    validations:
+      required: true
+  - type: input
+    id: device
+    attributes:
+      label: Device and browser
+      placeholder: iPhone, Safari

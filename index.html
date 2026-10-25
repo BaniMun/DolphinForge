@@ -135,6 +135,8 @@
   .error pre { margin: 4px 0; white-space: pre-wrap; font: 14px/1.45 ui-monospace, Menlo, monospace; color: var(--bad); }
   .note { margin: 0; color: var(--muted); font-size: 15px; }
   .note.warn { color: var(--bad); }
+  .error .links { display: flex; flex-wrap: wrap; gap: 6px 18px; }
+  .foot { margin-top: 48px; padding-top: 16px; border-top: 1px solid var(--line); color: var(--muted); font-size: 15px; }
 
   /* ---------- form ---------- */
   h2 { font: 600 20px/1.3 var(--sans); margin: 0 0 14px; }
@@ -399,6 +401,9 @@
       </div>
     </details>
   </section>
+  <footer class="foot">
+    Something off, or an idea? <a id="feedbackLink" href="https://github.com/BaniMun/DolphinForge/issues/new?template=feedback.yml" target="_blank" rel="noopener">Send feedback</a>
+  </footer>
 </main>
 
 <script>
@@ -455,6 +460,38 @@
     store.set("theme", theme);
     applyTheme(theme);
   });
+
+  // ---------- feedback as GitHub issues ----------
+  // Issues always go to the main DolphinForge repo, through its issue forms;
+  // query parameters named after the form fields fill them in.
+  const FEEDBACK_REPO = "BaniMun/DolphinForge";
+
+  function deviceInfo() {
+    const ua = navigator.userAgent;
+    const dev = /iPhone/.test(ua) ? "iPhone" : /iPad/.test(ua) ? "iPad" : /Android/.test(ua) ? "Android"
+      : /Mac OS X/.test(ua) ? "Mac" : /Windows/.test(ua) ? "Windows" : /Linux/.test(ua) ? "Linux" : "";
+    const br = /Edg\//.test(ua) ? "Edge" : /Firefox\//.test(ua) ? "Firefox" : /CriOS|Chrome\//.test(ua) ? "Chrome"
+      : /Safari\//.test(ua) ? "Safari" : "";
+    return [dev, br].filter(Boolean).join(", ");
+  }
+
+  function issueUrl(template, fields) {
+    const q = new URLSearchParams({ template });
+    Object.entries(fields).forEach(([k, v]) => { if (v) q.set(k, String(v).slice(0, 1500)); });
+    return `https://github.com/${FEEDBACK_REPO}/issues/new?${q}`;
+  }
+
+  function problemUrl(build, fw, job) {
+    const app = build.upload ? `uploaded files (${build.label || "app"})`
+      : `${build.repo}${build.ref ? " @ " + build.ref : ""}${build.dir ? ", folder " + build.dir : ""}`;
+    const firmware = `${FW_LABELS[fw]} ${versionLabel(build, fw)}`;
+    return issueUrl("build-problem.yml", {
+      title: `Build problem: ${build.upload ? (build.label || "upload") : build.repo} on ${firmware}`,
+      app, firmware, error: job._error || "", run: job.html_url, device: deviceInfo(),
+    });
+  }
+
+  $("feedbackLink").href = issueUrl("feedback.yml", { device: deviceInfo() });
 
   // ---------- status LED ----------
   let busy = false;
@@ -1074,7 +1111,8 @@
       if (!job || jobState(job)[0] !== "bad") return "";
       return `<div class="error"><b>${FW_LABELS[fw]} didn't build</b>` +
         (job._error ? `<pre>${escapeHtml(job._error)}</pre>` : "") +
-        `<a href="${job.html_url}" target="_blank" rel="noopener">Open the build log</a></div>`;
+        `<span class="links"><a href="${job.html_url}" target="_blank" rel="noopener">Open the build log</a>` +
+        `<a href="${escapeHtml(problemUrl(build, fw, job))}" target="_blank" rel="noopener">Report this problem</a></span></div>`;
     }).join("");
   }
 

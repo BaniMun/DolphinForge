@@ -89,5 +89,11 @@ publish = next(st["run"] for st in jobs["release"]["steps"] if st.get("name") ==
 check("release tag points at the files commit", '--target "$commit"' in publish)
 check("files commit has no parents", "parents: []" in publish)
 
+# issue forms the page links to, with the field ids it fills in
+forms = {f.name: yaml.safe_load(f.read_text()) for f in (ROOT / ".github/ISSUE_TEMPLATE").glob("*.yml") if f.name != "config.yml"}
+ids = lambda form: {b.get("id") for b in form["body"]}
+check("feedback form fields", {"feedback", "device"} <= ids(forms["feedback.yml"]))
+check("build problem form fields", {"app", "firmware", "error", "run"} <= ids(forms["build-problem.yml"]))
+
 print(f"\n{'ALL PASSED' if not fails else f'{fails} FAILED'}")
 sys.exit(1 if fails else 0)

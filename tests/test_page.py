@@ -167,6 +167,8 @@ with sync_playwright() as p:
     page.add_init_script("const _st = window.setTimeout; window.setTimeout = (f, ms, ...a) => _st(f, Math.min(ms || 0, 20), ...a);")
     page.goto(PAGE)
 
+    fb = page.get_attribute("#feedbackLink", "href")
+    check("feedback opens an issue form", fb.startswith("https://github.com/BaniMun/DolphinForge/issues/new?template=feedback.yml"))
     check("hidden from search engines", "noindex" in (page.get_attribute("meta[name=robots]", "content") or ""))
     check("settings open when empty", page.locator("#setupDetails").get_attribute("open") is not None)
     page.wait_for_function("document.getElementById('led').dataset.led === 'error'")
@@ -250,7 +252,15 @@ with sync_playwright() as p:
     errs = page.inner_text("#errors")
     check("momentum error shown", "Failed" in rows and "Momentum didn't build" in errs and "unknown type <Foo>" in errs)
     check("error text escaped", "<Foo>" not in page.inner_html("#errors"))
-    check("log link for failure", page.locator("#errors a").get_attribute("href") == "https://gh/job/3")
+    check("log link for failure", page.locator("#errors a").first.get_attribute("href") == "https://gh/job/3")
+    from urllib.parse import urlparse, parse_qs
+    rep_url = page.locator("#errors a", has_text="Report this problem").get_attribute("href")
+    q = {k: v[0] for k, v in parse_qs(urlparse(rep_url).query).items()}
+    check("report goes to DolphinForge issues", rep_url.startswith("https://github.com/BaniMun/DolphinForge/issues/new?"))
+    check("report uses the build form", q.get("template") == "build-problem.yml")
+    check("report prefilled", q.get("app") == "owner/app @ dev, folder apps/cfs" and q.get("firmware") == "Momentum mntm-010"
+          and "unknown type <Foo>" in q.get("error", "") and q.get("run") == "https://gh/job/3")
+    check("report title", q.get("title") == "Build problem: owner/app on Momentum mntm-010")
     check("summary on screen", page.inner_text("#lcdSummary") == "2 of 3 built")
     check("LED red after partial failure", page.get_attribute("#led", "data-led") == "fail")
     check("keep-open note gone when done", page.is_hidden("#lcdNote"))
