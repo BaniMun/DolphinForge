@@ -134,6 +134,7 @@ with sync_playwright() as p:
     page.add_init_script("const _st = window.setTimeout; window.setTimeout = (f, ms, ...a) => _st(f, Math.min(ms || 0, 20), ...a);")
     page.goto(PAGE)
 
+    check("hidden from search engines", "noindex" in (page.get_attribute("meta[name=robots]", "content") or ""))
     check("settings open when empty", page.locator("#setupDetails").get_attribute("open") is not None)
     page.fill("#repo", "owner/app")
     page.click("#buildBtn")

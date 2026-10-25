@@ -3,8 +3,6 @@
 Build Flipper Zero apps (`.fap`) in the browser for **Official**, **Momentum** and **Unleashed**
 firmware, latest or archived versions.
 
-**→ [banimun.github.io/DolphinForge](https://banimun.github.io/DolphinForge/)**
-
 ## How it works
 
 - Paste a GitHub link to a Flipper app, pick the firmwares and versions, hit **Build**.
