@@ -1,0 +1,440 @@
+<!doctype html>
+<html lang="pl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>FAP Builder</title>
+<meta name="description" content="Kompilator aplikacji .fap dla Flipper Zero: Official, Momentum, Unleashed.">
+<style>
+  :root {
+    --bg: #111214;
+    --panel: #1a1c1f;
+    --panel-2: #222529;
+    --line: #2e3237;
+    --text: #e8e6e3;
+    --muted: #9a9ea4;
+    --accent: #ff8200;
+    --accent-ink: #1a0f00;
+    --ok: #3fb950;
+    --bad: #f85149;
+    --run: #d29922;
+    --radius: 10px;
+    --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--text);
+    font: 15px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  }
+  main { max-width: 720px; margin: 0 auto; padding: 24px 16px 64px; }
+  header { display: flex; flex-wrap: wrap; align-items: baseline; column-gap: 12px; margin-bottom: 20px; }
+  h1 { font-size: 22px; margin: 0; letter-spacing: .3px; }
+  h1 span { color: var(--accent); }
+  header small { color: var(--muted); }
+  h2 { font-size: 13px; text-transform: uppercase; letter-spacing: 1px; color: var(--muted); margin: 0 0 12px; }
+  section { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 16px; margin-bottom: 16px; }
+  label { display: block; font-size: 13px; color: var(--muted); margin: 12px 0 4px; }
+  label:first-of-type { margin-top: 0; }
+  input[type=text], input[type=password], select {
+    width: 100%; background: var(--panel-2); color: var(--text); border: 1px solid var(--line);
+    border-radius: 8px; padding: 10px 12px; font: inherit; outline: none;
+  }
+  input:focus, select:focus { border-color: var(--accent); }
+  .row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .row > div > label { margin-top: 12px; }
+  .chips { display: flex; flex-wrap: wrap; gap: 8px; }
+  .chip { position: relative; margin: 0; }
+  .chip input { position: absolute; opacity: 0; inset: 0; cursor: pointer; }
+  .chip span {
+    display: inline-block; padding: 8px 14px; border-radius: 999px; border: 1px solid var(--line);
+    background: var(--panel-2); color: var(--muted); user-select: none;
+  }
+  .chip input:checked + span { border-color: var(--accent); color: var(--text); background: #2a1d10; }
+  .chip input:focus-visible + span { outline: 2px solid var(--accent); }
+  button {
+    font: inherit; border-radius: 8px; border: 1px solid var(--line); background: var(--panel-2);
+    color: var(--text); padding: 10px 14px; cursor: pointer;
+  }
+  button.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); font-weight: 600; width: 100%; margin-top: 16px; padding: 12px; }
+  button:disabled { opacity: .5; cursor: default; }
+  .muted { color: var(--muted); font-size: 13px; }
+  .hint { color: var(--muted); font-size: 12px; margin-top: 4px; }
+  details summary { cursor: pointer; color: var(--muted); font-size: 13px; text-transform: uppercase; letter-spacing: 1px; }
+  details[open] summary { margin-bottom: 12px; }
+  .status-row { display: flex; align-items: center; gap: 10px; padding: 8px 0; border-top: 1px solid var(--line); }
+  .status-row:first-child { border-top: 0; }
+  .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--line); flex: none; }
+  .dot.run { background: var(--run); animation: pulse 1.2s infinite; }
+  .dot.ok { background: var(--ok); }
+  .dot.bad { background: var(--bad); }
+  @keyframes pulse { 50% { opacity: .35; } }
+  .status-row .name { flex: 1; }
+  .status-row .state { color: var(--muted); font-size: 13px; }
+  .err { color: var(--bad); font-family: var(--mono); font-size: 12px; white-space: pre-wrap; margin: 4px 0 0 20px; }
+  .files { margin-top: 12px; display: grid; gap: 8px; }
+  .file {
+    display: flex; align-items: center; justify-content: space-between; gap: 12px;
+    background: var(--panel-2); border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px;
+    color: var(--text); text-decoration: none;
+  }
+  .file:hover { border-color: var(--accent); }
+  .file code { font-family: var(--mono); font-size: 13px; overflow-wrap: anywhere; }
+  .file b { color: var(--accent); font-size: 13px; white-space: nowrap; }
+  a { color: var(--accent); }
+  .history-item { display: flex; justify-content: space-between; gap: 12px; padding: 8px 0; border-top: 1px solid var(--line); font-size: 14px; }
+  .history-item:first-child { border-top: 0; }
+  .history-item .when { color: var(--muted); font-size: 12px; white-space: nowrap; }
+  .msg { padding: 10px 12px; border-radius: 8px; background: #2d1414; border: 1px solid #5a2323; color: #ffb4ae; margin-top: 12px; font-size: 14px; }
+  .msg.info { background: #14202d; border-color: #23405a; color: #b4d4ff; }
+  [hidden] { display: none !important; }
+  @media (max-width: 520px) { .row { grid-template-columns: 1fr; gap: 0; } }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>FAP <span>Builder</span></h1>
+    <small>Flipper Zero · Official · Momentum · Unleashed</small>
+  </header>
+
+  <section id="setup">
+    <details id="setupDetails">
+      <summary>Ustawienia</summary>
+      <label for="builderRepo">Repo z kompilatorem (Twoje)</label>
+      <input type="text" id="builderRepo" placeholder="login/flipper-builder" autocomplete="off" spellcheck="false">
+      <label for="token">Token GitHub</label>
+      <input type="password" id="token" placeholder="github_pat_..." autocomplete="off" spellcheck="false">
+      <div class="hint">Fine-grained token tylko do repo kompilatora: <b>Actions: Read and write</b>, <b>Contents: Read-only</b>. Zostaje wyłącznie w tej przeglądarce.</div>
+      <button id="saveSettings" type="button" style="margin-top:12px">Zapisz</button>
+      <span id="settingsState" class="muted" style="margin-left:8px"></span>
+    </details>
+  </section>
+
+  <section>
+    <h2>Nowy build</h2>
+    <form id="buildForm" autocomplete="off">
+      <label for="repo">Repozytorium aplikacji</label>
+      <input type="text" id="repo" placeholder="https://github.com/owner/app albo owner/app" required spellcheck="false">
+      <div class="row">
+        <div>
+          <label for="ref">Gałąź / tag</label>
+          <input type="text" id="ref" placeholder="domyślna" spellcheck="false">
+        </div>
+        <div>
+          <label for="appDir">Folder z application.fam</label>
+          <input type="text" id="appDir" placeholder="główny folder" spellcheck="false">
+        </div>
+      </div>
+      <label>Firmware</label>
+      <div class="chips" id="fwChips">
+        <label class="chip"><input type="checkbox" value="official" checked><span>Official</span></label>
+        <label class="chip"><input type="checkbox" value="momentum" checked><span>Momentum</span></label>
+        <label class="chip"><input type="checkbox" value="unleashed" checked><span>Unleashed</span></label>
+      </div>
+      <label for="channel">Kanał SDK</label>
+      <select id="channel">
+        <option value="release">Release (stabilny)</option>
+        <option value="dev">Dev</option>
+      </select>
+      <button class="primary" id="buildBtn" type="submit">Kompiluj</button>
+      <div id="formMsg" class="msg" hidden></div>
+    </form>
+  </section>
+
+  <section id="statusBox" hidden>
+    <h2 id="statusTitle">Status</h2>
+    <div id="statusRows"></div>
+    <div id="files" class="files"></div>
+    <div id="statusMsg" class="msg" hidden></div>
+    <p class="muted" id="runLink" hidden></p>
+  </section>
+
+  <section id="historyBox" hidden>
+    <h2>Ostatnie buildy</h2>
+    <div id="history"></div>
+  </section>
+</main>
+
+<script>
+(() => {
+  "use strict";
+  const API = "https://api.github.com";
+  const WORKFLOW = "build.yml";
+  const FW_LABELS = { official: "Official", momentum: "Momentum", unleashed: "Unleashed" };
+  const $ = (id) => document.getElementById(id);
+
+  // ---------- storage (per-browser, may be unavailable) ----------
+  const store = {
+    get(key, fallback) {
+      try { const v = localStorage.getItem("fapb." + key); return v === null ? fallback : JSON.parse(v); }
+      catch { return fallback; }
+    },
+    set(key, value) {
+      try { localStorage.setItem("fapb." + key, JSON.stringify(value)); return true; }
+      catch { return false; }
+    },
+  };
+
+  // ---------- settings ----------
+  function guessBuilderRepo() {
+    const host = location.hostname;
+    if (!host.endsWith(".github.io")) return "";
+    const owner = host.split(".")[0];
+    const first = location.pathname.split("/").filter(Boolean)[0];
+    return first && !first.includes(".") ? `${owner}/${first}` : `${owner}/${host}`;
+  }
+  let settings = { builderRepo: store.get("builderRepo", "") || guessBuilderRepo(), token: store.get("token", "") };
+  $("builderRepo").value = settings.builderRepo;
+  $("token").value = settings.token;
+  if (!settings.builderRepo || !settings.token) $("setupDetails").open = true;
+
+  $("saveSettings").addEventListener("click", () => {
+    settings.builderRepo = $("builderRepo").value.trim().replace(/^https?:\/\/github\.com\//, "").replace(/\/+$/, "");
+    settings.token = $("token").value.trim();
+    const ok = store.set("builderRepo", settings.builderRepo) && store.set("token", settings.token);
+    $("settingsState").textContent = ok ? "Zapisane" : "Zapisane tylko do zamknięcia karty";
+    defaultBranch = null;
+    if (settings.builderRepo && settings.token) setTimeout(() => { $("setupDetails").open = false; }, 600);
+  });
+
+  // ---------- GitHub API ----------
+  async function gh(path, opts = {}) {
+    const res = await fetch(API + path, {
+      ...opts,
+      headers: {
+        Accept: "application/vnd.github+json",
+        "X-GitHub-Api-Version": "2022-11-28",
+        ...(settings.token ? { Authorization: "Bearer " + settings.token } : {}),
+        ...(opts.body ? { "Content-Type": "application/json" } : {}),
+      },
+    });
+    if (res.status === 204) return null;
+    let data = null;
+    try { data = await res.json(); } catch { /* empty body */ }
+    if (!res.ok) {
+      const err = new Error((data && data.message) || `HTTP ${res.status}`);
+      err.status = res.status;
+      throw err;
+    }
+    return data;
+  }
+
+  let defaultBranch = null;
+  async function getDefaultBranch() {
+    if (!defaultBranch) defaultBranch = (await gh(`/repos/${settings.builderRepo}`)).default_branch;
+    return defaultBranch;
+  }
+
+  function explain(err) {
+    if (err.status === 401) return "Token jest nieprawidłowy albo wygasł.";
+    if (err.status === 403) return "Token nie ma uprawnień (Actions: Read and write, Contents: Read-only) albo trafiłeś na limit API.";
+    if (err.status === 404) return "Nie widzę repo kompilatora ani workflow build.yml. Sprawdź nazwę repo i czy token ma do niego dostęp.";
+    if (err.status === 422) return "GitHub odrzucił dane: " + err.message;
+    return err.message || String(err);
+  }
+
+  // ---------- form ----------
+  const params = new URLSearchParams(location.search);
+  if (params.get("repo")) $("repo").value = params.get("repo");
+  if (params.get("ref")) $("ref").value = params.get("ref");
+  if (params.get("dir")) $("appDir").value = params.get("dir");
+
+  function normRepo(s) {
+    s = s.trim().replace(/^(https?:\/\/)?(www\.)?github\.com\//, "").replace(/(\.git)?\/*$/, "");
+    // Accept a pasted ".../tree/<branch>/<folder>" link and split it up.
+    const m = s.match(/^([^/]+\/[^/]+)\/tree\/([^/]+)(?:\/(.+))?$/);
+    if (m) return { repo: m[1], ref: m[2], dir: m[3] || "" };
+    return { repo: s };
+  }
+
+  function showMsg(el, text, info = false) {
+    el.textContent = text;
+    el.classList.toggle("info", info);
+    el.hidden = !text;
+  }
+
+  $("buildForm").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    showMsg($("formMsg"), "");
+    if (!settings.builderRepo || !settings.token) {
+      $("setupDetails").open = true;
+      return showMsg($("formMsg"), "Najpierw uzupełnij i zapisz ustawienia: repo kompilatora i token.");
+    }
+    const parsed = normRepo($("repo").value);
+    if (!/^[A-Za-z0-9-]+\/[A-Za-z0-9._-]+$/.test(parsed.repo)) {
+      return showMsg($("formMsg"), "Podaj repo jako owner/nazwa albo link do GitHuba.");
+    }
+    const ref = $("ref").value.trim() || parsed.ref || "";
+    const dir = $("appDir").value.trim() || parsed.dir || "";
+    const fws = [...document.querySelectorAll("#fwChips input:checked")].map((i) => i.value);
+    if (!fws.length) return showMsg($("formMsg"), "Zaznacz przynajmniej jeden firmware.");
+
+    const requestId = Date.now().toString(36) + "-" + Math.random().toString(36).slice(2, 8);
+    const build = {
+      id: requestId, repo: parsed.repo, ref, dir, fws, channel: $("channel").value,
+      started: Date.now(), runId: null, state: "queued",
+    };
+
+    $("buildBtn").disabled = true;
+    try {
+      const branch = await getDefaultBranch();
+      await gh(`/repos/${settings.builderRepo}/actions/workflows/${WORKFLOW}/dispatches`, {
+        method: "POST",
+        body: JSON.stringify({
+          ref: branch,
+          inputs: {
+            repo: build.repo, ref: build.ref, app_dir: build.dir,
+            firmwares: build.fws.join(","), channel: build.channel, request_id: build.id,
+          },
+        }),
+      });
+      saveHistory(build);
+      track(build);
+    } catch (err) {
+      showMsg($("formMsg"), explain(err));
+      $("buildBtn").disabled = false;
+    }
+  });
+
+  // ---------- tracking ----------
+  let tracking = 0;
+  const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+  function renderRows(build, jobs) {
+    const rows = build.fws.map((fw) => {
+      const job = jobs.find((j) => j.name === FW_LABELS[fw]);
+      let cls = "", text = "w kolejce";
+      if (job) {
+        if (job.status === "completed") {
+          cls = job.conclusion === "success" ? "ok" : "bad";
+          text = { success: "gotowe", failure: "błąd", cancelled: "anulowane", skipped: "pominięte" }[job.conclusion] || job.conclusion;
+        } else if (job.status === "in_progress") { cls = "run"; text = "kompiluję…"; }
+      }
+      const err = job && job._error ? `<div class="err">${escapeHtml(job._error)}</div>` : "";
+      const link = job && cls === "bad" ? ` · <a href="${job.html_url}" target="_blank" rel="noopener">log</a>` : "";
+      return `<div><div class="status-row"><span class="dot ${cls}"></span><span class="name">${FW_LABELS[fw]}</span><span class="state">${text}${link}</span></div>${err}</div>`;
+    });
+    $("statusRows").innerHTML = rows.join("");
+  }
+
+  function escapeHtml(s) {
+    return String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+  }
+
+  async function findRun(build) {
+    for (let i = 0; i < 30; i++) {
+      const data = await gh(`/repos/${settings.builderRepo}/actions/workflows/${WORKFLOW}/runs?event=workflow_dispatch&per_page=20`);
+      const run = (data.workflow_runs || []).find((r) => (r.display_title || "").includes(build.id));
+      if (run) return run;
+      await sleep(3000);
+    }
+    throw new Error("GitHub nie uruchomił builda w ciągu 90 s. Sprawdź zakładkę Actions w repo kompilatora.");
+  }
+
+  async function addErrors(jobs) {
+    // Pull the first error annotation of each failed job (best effort).
+    await Promise.all(jobs.filter((j) => j.conclusion === "failure" && !j._error).map(async (j) => {
+      try {
+        const ann = await gh(`/repos/${settings.builderRepo}/check-runs/${j.id}/annotations`);
+        const first = (ann || []).find((a) => a.annotation_level === "failure") || (ann || [])[0];
+        if (first) j._error = first.message.split("\n").slice(0, 6).join("\n");
+      } catch { /* annotations are optional */ }
+    }));
+  }
+
+  async function track(build) {
+    const my = ++tracking;
+    $("statusBox").hidden = false;
+    $("statusTitle").textContent = `${build.repo}${build.ref ? " @ " + build.ref : ""}`;
+    $("files").innerHTML = "";
+    $("runLink").hidden = true;
+    showMsg($("statusMsg"), "");
+    renderRows(build, []);
+    try {
+      const run = build.runId ? await gh(`/repos/${settings.builderRepo}/actions/runs/${build.runId}`) : await findRun(build);
+      if (my !== tracking) return;
+      build.runId = run.id;
+      saveHistory(build);
+      $("runLink").innerHTML = `<a href="${run.html_url}" target="_blank" rel="noopener">Zobacz na GitHubie</a>`;
+      $("runLink").hidden = false;
+
+      let jobs = [];
+      for (;;) {
+        const [r, j] = await Promise.all([
+          gh(`/repos/${settings.builderRepo}/actions/runs/${build.runId}`),
+          gh(`/repos/${settings.builderRepo}/actions/runs/${build.runId}/jobs?per_page=50`),
+        ]);
+        if (my !== tracking) return;
+        jobs = j.jobs || [];
+        await addErrors(jobs);
+        renderRows(build, jobs);
+        const prep = jobs.find((x) => x.name === "prepare");
+        if (prep && prep.conclusion === "failure") {
+          await addErrors([prep]);
+          showMsg($("statusMsg"), "Złe dane wejściowe: " + (prep._error || "sprawdź log na GitHubie."));
+        }
+        if (r.status === "completed") break;
+        await sleep(4000);
+      }
+      await showFiles(build);
+    } catch (err) {
+      if (my === tracking) showMsg($("statusMsg"), explain(err));
+    } finally {
+      if (my === tracking) $("buildBtn").disabled = false;
+    }
+  }
+
+  async function showFiles(build) {
+    try {
+      const rel = await gh(`/repos/${settings.builderRepo}/releases/tags/build-${build.id}`);
+      const assets = (rel.assets || []).filter((a) => a.name.endsWith(".fap"));
+      $("files").innerHTML = assets.map((a) =>
+        `<a class="file" href="${a.browser_download_url}" download><code>${escapeHtml(a.name)}</code><b>${(a.size / 1024).toFixed(1)} KB ↓</b></a>`
+      ).join("");
+      build.files = assets.map((a) => ({ name: a.name, url: a.browser_download_url }));
+      build.state = assets.length === build.fws.length ? "ok" : assets.length ? "partial" : "bad";
+      if (assets.length) showMsg($("statusMsg"), "Wgraj plik pasujący do Twojego firmware'u do folderu apps/ na karcie SD (qFlipper albo aplikacja mobilna Flipper).", true);
+    } catch (err) {
+      build.state = "bad";
+      if (err.status === 404) showMsg($("statusMsg"), "Żaden firmware się nie skompilował. Kliknij „log” przy błędzie albo zobacz build na GitHubie.");
+      else showMsg($("statusMsg"), explain(err));
+    }
+    saveHistory(build);
+  }
+
+  // ---------- history ----------
+  function saveHistory(build) {
+    const list = store.get("history", []).filter((b) => b.id !== build.id);
+    list.unshift(build);
+    store.set("history", list.slice(0, 15));
+    renderHistory();
+  }
+
+  function renderHistory() {
+    const list = store.get("history", []);
+    $("historyBox").hidden = !list.length;
+    const icon = { ok: "✓", partial: "◐", bad: "✕" };
+    $("history").innerHTML = list.map((b) => `
+      <div class="history-item">
+        <span>${icon[b.state] || "…"} <a href="#" data-id="${b.id}">${escapeHtml(b.repo)}</a>${b.ref ? " <span class='muted'>@ " + escapeHtml(b.ref) + "</span>" : ""}</span>
+        <span class="when">${new Date(b.started).toLocaleString("pl-PL", { dateStyle: "short", timeStyle: "short" })}</span>
+      </div>`).join("");
+  }
+
+  $("history").addEventListener("click", (e) => {
+    const a = e.target.closest("a[data-id]");
+    if (!a) return;
+    e.preventDefault();
+    const b = store.get("history", []).find((x) => x.id === a.dataset.id);
+    if (!b) return;
+    $("repo").value = b.repo; $("ref").value = b.ref || ""; $("appDir").value = b.dir || "";
+    $("buildBtn").disabled = true;
+    track(b);
+    window.scrollTo({ top: $("statusBox").offsetTop - 16, behavior: "smooth" });
+  });
+
+  renderHistory();
+})();
+</script>
+</body>
+</html>

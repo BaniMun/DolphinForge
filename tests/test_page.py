@@ -1,0 +1,179 @@
+"""Headless browser tests for index.html with a mocked GitHub API.
+
+usage: python3 tests/test_page.py [screenshot_dir]
+"""
+import json
+import pathlib
+import re
+import sys
+
+from playwright.sync_api import sync_playwright
+
+ROOT = pathlib.Path(__file__).resolve().parent.parent
+PAGE = (ROOT / "index.html").as_uri()
+SHOTS = pathlib.Path(sys.argv[1]) if len(sys.argv) > 1 else None
+fails = 0
+
+
+def check(name, cond):
+    global fails
+    print(("PASS " if cond else "FAIL ") + name)
+    fails += 0 if cond else 1
+
+
+class FakeGitHub:
+    """Stateful fake of the few endpoints the page uses."""
+
+    def __init__(self, dispatch_status=204):
+        self.dispatch_status = dispatch_status
+        self.dispatched = None
+        self.run_polls = 0
+        self.list_polls = 0
+
+    def handle(self, route):
+        req = route.request
+        url = req.url
+        path = re.sub(r"^https://api\.github\.com", "", url.split("?")[0])
+        auth = req.headers.get("authorization", "")
+
+        def reply(body, status=200):
+            route.fulfill(status=status, content_type="application/json",
+                          headers={"access-control-allow-origin": "*"}, body=json.dumps(body))
+
+        if req.method == "OPTIONS":
+            return route.fulfill(status=204, headers={
+                "access-control-allow-origin": "*",
+                "access-control-allow-headers": "*",
+                "access-control-allow-methods": "GET,POST"})
+        if auth != "Bearer good-token":
+            return reply({"message": "Bad credentials"}, 401)
+        if path == "/repos/me/builder":
+            return reply({"default_branch": "main"})
+        if path.endswith("/dispatches") and req.method == "POST":
+            if self.dispatch_status != 204:
+                return reply({"message": "nope"}, self.dispatch_status)
+            self.dispatched = json.loads(req.post_data)
+            return route.fulfill(status=204, headers={"access-control-allow-origin": "*"})
+        rid = self.dispatched["inputs"]["request_id"] if self.dispatched else "none"
+        if path == "/repos/me/builder/actions/workflows/build.yml/runs":
+            self.list_polls += 1
+            runs = [] if self.list_polls == 1 else [
+                {"id": 1, "display_title": "build other x/y", "html_url": "u0"},
+                {"id": 77, "display_title": f"build {rid} owner/app", "html_url": "https://gh/run/77"}]
+            return reply({"workflow_runs": runs})
+        if path == "/repos/me/builder/actions/runs/77":
+            self.run_polls += 1
+            done = self.run_polls >= 2
+            return reply({"id": 77, "status": "completed" if done else "in_progress",
+                          "html_url": "https://gh/run/77"})
+        if path == "/repos/me/builder/actions/runs/77/jobs":
+            done = self.run_polls >= 2
+            return reply({"jobs": [
+                {"id": 1, "name": "prepare", "status": "completed", "conclusion": "success", "html_url": "j1"},
+                {"id": 2, "name": "Official", "status": "completed", "conclusion": "success", "html_url": "j2"},
+                {"id": 3, "name": "Momentum", "status": "completed" if done else "in_progress",
+                 "conclusion": "failure" if done else None, "html_url": "https://gh/job/3"},
+                {"id": 4, "name": "Unleashed", "status": "completed", "conclusion": "success", "html_url": "j4"},
+            ]})
+        if path == "/repos/me/builder/check-runs/3/annotations":
+            return reply([{"annotation_level": "failure", "message": "src/app.c:12: error: unknown type <Foo>"}])
+        if path == f"/repos/me/builder/releases/tags/build-{rid}":
+            return reply({"assets": [
+                {"name": "cfs_tag_writer-official.fap", "size": 20480, "browser_download_url": "https://dl/o.fap"},
+                {"name": "cfs_tag_writer-unleashed.fap", "size": 20992, "browser_download_url": "https://dl/u.fap"},
+                {"name": "notes.txt", "size": 1, "browser_download_url": "https://dl/n"}]})
+        return reply({"message": "Not Found"}, 404)
+
+
+with sync_playwright() as p:
+    browser = p.chromium.launch()
+
+    # --- happy path (with one failing firmware) ---
+    ctx = browser.new_context(viewport={"width": 390, "height": 844})
+    page = ctx.new_page()
+    errors = []
+    page.on("pageerror", lambda e: errors.append(str(e)))
+    gh = FakeGitHub()
+    page.route("https://api.github.com/**", gh.handle)
+    # Speed up polling: make every timer fire almost immediately.
+    page.add_init_script("const _st = window.setTimeout; window.setTimeout = (f, ms, ...a) => _st(f, Math.min(ms || 0, 20), ...a);")
+    page.goto(PAGE)
+
+    check("settings open when empty", page.locator("#setupDetails").get_attribute("open") is not None)
+    page.fill("#repo", "owner/app")
+    page.click("#buildBtn")
+    check("asks for settings first", "ustawienia" in page.inner_text("#formMsg"))
+
+    page.fill("#builderRepo", "https://github.com/me/builder/")
+    page.fill("#token", "good-token")
+    page.click("#saveSettings")
+    check("settings saved", page.inner_text("#settingsState") == "Zapisane")
+
+    page.fill("#repo", "https://github.com/owner/app/tree/dev/apps/cfs")
+    page.click("#buildBtn")
+    page.wait_for_selector("#files a.file", timeout=15000)
+
+    inp = gh.dispatched["inputs"]
+    check("dispatch on default branch", gh.dispatched["ref"] == "main")
+    check("tree link split into repo/ref/dir",
+          (inp["repo"], inp["ref"], inp["app_dir"]) == ("owner/app", "dev", "apps/cfs"))
+    check("all three firmwares requested", inp["firmwares"] == "official,momentum,unleashed")
+    check("request id format", re.fullmatch(r"[a-z0-9]+-[a-z0-9]+", inp["request_id"]) is not None)
+    files = page.locator("#files a.file")
+    check("only .fap files listed", files.count() == 2)
+    check("download link", files.first.get_attribute("href") == "https://dl/o.fap")
+    rows = page.inner_text("#statusRows")
+    check("official done", "Official" in rows and "gotowe" in rows)
+    check("momentum error shown", "błąd" in rows and "unknown type <Foo>" in rows)
+    check("error text escaped", "<Foo>" not in page.inner_html("#statusRows"))
+    check("history shows partial", "◐" in page.inner_text("#history"))
+    check("run link", page.locator("#runLink a").get_attribute("href") == "https://gh/run/77")
+    check("button re-enabled", page.is_enabled("#buildBtn"))
+    if SHOTS:
+        page.screenshot(path=str(SHOTS / "mobile.png"), full_page=True)
+
+    # history survives reload and settings persist
+    page.reload()
+    check("settings persisted", page.input_value("#token") == "good-token")
+    check("history persisted", "owner/app" in page.inner_text("#history"))
+    check("no JS errors", not errors)
+    ctx.close()
+
+    # --- bad token ---
+    ctx = browser.new_context()
+    page = ctx.new_page()
+    page.route("https://api.github.com/**", FakeGitHub().handle)
+    page.goto(PAGE)
+    page.fill("#builderRepo", "me/builder")
+    page.fill("#token", "wrong")
+    page.click("#saveSettings")
+    page.fill("#repo", "owner/app")
+    page.click("#buildBtn")
+    page.wait_for_function("!document.getElementById('formMsg').hidden")
+    check("bad token message", "Token jest nieprawidłowy" in page.inner_text("#formMsg"))
+    ctx.close()
+
+    # --- input validation in the page ---
+    ctx = browser.new_context()
+    page = ctx.new_page()
+    page.route("https://api.github.com/**", FakeGitHub().handle)
+    page.goto(PAGE)
+    page.fill("#builderRepo", "me/builder")
+    page.fill("#token", "good-token")
+    page.click("#saveSettings")
+    page.fill("#repo", "not a repo")
+    page.click("#buildBtn")
+    check("rejects garbage repo", "owner/nazwa" in page.inner_text("#formMsg"))
+    for box in page.locator("#fwChips input").all():
+        box.uncheck()
+    page.fill("#repo", "owner/app")
+    page.click("#buildBtn")
+    check("requires a firmware", "firmware" in page.inner_text("#formMsg"))
+    if SHOTS:
+        page.set_viewport_size({"width": 1100, "height": 800})
+        page.screenshot(path=str(SHOTS / "desktop.png"), full_page=True)
+    ctx.close()
+    browser.close()
+
+print(f"\n{'ALL PASSED' if not fails else f'{fails} FAILED'}")
+sys.exit(1 if fails else 0)

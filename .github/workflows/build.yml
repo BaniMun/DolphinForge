@@ -1,0 +1,204 @@
+name: Build FAP
+# Builds a Flipper Zero app (.fap) from any public GitHub repo for the chosen
+# firmwares and publishes the files as a GitHub Release tagged build-<request_id>.
+# Started by the web page (index.html) through the workflow_dispatch API.
+#
+# Security: the app being built is someone else's code. The build job has only
+# read access and no secrets; the single job allowed to write (create the
+# release) never runs that code, it only uploads the finished .fap files.
+
+run-name: "build ${{ inputs.request_id }} ${{ inputs.repo }}"
+
+on:
+  workflow_dispatch:
+    inputs:
+      repo:
+        description: "Source repo: owner/name or https://github.com/owner/name"
+        required: true
+      ref:
+        description: "Branch, tag or commit (empty = default branch)"
+        required: false
+        default: ""
+      app_dir:
+        description: "Folder with application.fam (empty = repo root)"
+        required: false
+        default: ""
+      firmwares:
+        description: "Comma list: official,momentum,unleashed"
+        required: false
+        default: "official,momentum,unleashed"
+      channel:
+        description: "SDK channel: release or dev"
+        required: false
+        default: "release"
+      request_id:
+        description: "Unique id set by the web page to find this run"
+        required: true
+
+permissions: {}
+
+concurrency:
+  group: build-${{ inputs.request_id }}
+
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    outputs:
+      repo: ${{ steps.parse.outputs.repo }}
+      matrix: ${{ steps.parse.outputs.matrix }}
+    steps:
+      - name: Validate inputs
+        id: parse
+        env:
+          IN_REPO: ${{ inputs.repo }}
+          IN_REF: ${{ inputs.ref }}
+          IN_DIR: ${{ inputs.app_dir }}
+          IN_FW: ${{ inputs.firmwares }}
+          IN_CHANNEL: ${{ inputs.channel }}
+          IN_ID: ${{ inputs.request_id }}
+        run: |
+          python3 - <<'EOF'
+          import json, os, re, sys
+
+          def fail(msg):
+              print(f"::error::{msg}")
+              sys.exit(1)
+
+          repo = os.environ["IN_REPO"].strip()
+          repo = re.sub(r"^(https?://)?(www\.)?github\.com/", "", repo)
+          repo = re.sub(r"(\.git)?/*$", "", repo)
+          if not re.fullmatch(r"[A-Za-z0-9-]{1,39}/[A-Za-z0-9._-]{1,100}", repo):
+              fail("Repo must be owner/name or a github.com URL")
+
+          ref = os.environ["IN_REF"].strip()
+          if ref and not re.fullmatch(r"[A-Za-z0-9._/-]{1,200}", ref):
+              fail("Invalid branch/tag")
+          app_dir = os.environ["IN_DIR"].strip().strip("/")
+          if app_dir and (not re.fullmatch(r"[A-Za-z0-9._/-]{1,200}", app_dir) or ".." in app_dir):
+              fail("Invalid app folder")
+          if not re.fullmatch(r"[A-Za-z0-9-]{6,64}", os.environ["IN_ID"]):
+              fail("Invalid request id")
+
+          channel = os.environ["IN_CHANNEL"].strip() or "release"
+          if channel not in ("release", "dev"):
+              fail("Channel must be release or dev")
+
+          sdks = {
+              "official": ("Official", ""),
+              "momentum": ("Momentum", "https://up.momentum-fw.dev/firmware/directory.json"),
+              "unleashed": ("Unleashed", "https://up.unleashedflip.com/directory.json"),
+          }
+          wanted = [f.strip().lower() for f in os.environ["IN_FW"].split(",") if f.strip()]
+          bad = [f for f in wanted if f not in sdks]
+          if bad or not wanted:
+              fail(f"Unknown firmware: {', '.join(bad) or '(none)'}")
+
+          include = [
+              {"fw": f, "label": sdks[f][0], "index_url": sdks[f][1], "channel": channel,
+               "ref": ref, "app_dir": app_dir}
+              for f in dict.fromkeys(wanted)
+          ]
+          with open(os.environ["GITHUB_OUTPUT"], "a") as out:
+              out.write(f"repo={repo}\n")
+              out.write("matrix=" + json.dumps({"include": include}) + "\n")
+          print(f"repo={repo} ref={ref or '(default)'} dir={app_dir or '(root)'} fw={wanted}")
+          EOF
+
+  build:
+    needs: prepare
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.prepare.outputs.matrix) }}
+    name: ${{ matrix.label }}
+    steps:
+      - name: Checkout app
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ needs.prepare.outputs.repo }}
+          ref: ${{ matrix.ref }}
+          path: src
+          submodules: recursive
+          persist-credentials: false
+
+      - name: Build (official SDK)
+        if: matrix.index_url == ''
+        id: official
+        uses: flipperdevices/flipperzero-ufbt-action@v0.1
+        with:
+          app-dir: src/${{ matrix.app_dir }}
+          sdk-channel: ${{ matrix.channel }}
+
+      - name: Build (custom firmware SDK)
+        if: matrix.index_url != ''
+        id: custom
+        uses: flipperdevices/flipperzero-ufbt-action@v0.1
+        with:
+          app-dir: src/${{ matrix.app_dir }}
+          sdk-channel: ${{ matrix.channel }}
+          sdk-index-url: ${{ matrix.index_url }}
+
+      - name: Collect .fap files
+        env:
+          FAPS: ${{ steps.official.outputs.fap-artifacts || steps.custom.outputs.fap-artifacts }}
+          FW: ${{ matrix.fw }}
+        run: |
+          mkdir -p out
+          for f in $FAPS; do
+            base="$(basename "$f" .fap)"
+            cp "$f" "out/${base}-${FW}.fap"
+          done
+          ls -la out
+          test -n "$(ls out)"
+
+      - name: Upload
+        uses: actions/upload-artifact@v4
+        with:
+          name: fap-${{ matrix.fw }}
+          path: out/*.fap
+          retention-days: 1
+
+  release:
+    needs: [prepare, build]
+    if: ${{ !cancelled() && needs.prepare.result == 'success' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    steps:
+      - name: Download built files
+        uses: actions/download-artifact@v4
+        with:
+          pattern: fap-*
+          path: dist
+          merge-multiple: true
+
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TAG: build-${{ inputs.request_id }}
+          SRC: ${{ needs.prepare.outputs.repo }}
+          SRC_REF: ${{ inputs.ref }}
+          BUILD_RESULT: ${{ needs.build.result }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          shopt -s nullglob
+          files=(dist/*.fap)
+          if [ ${#files[@]} -eq 0 ]; then
+            echo "::error::No firmware built successfully"
+            exit 1
+          fi
+          {
+            echo "Source: https://github.com/${SRC} ${SRC_REF:+(${SRC_REF})}"
+            echo "Build result: ${BUILD_RESULT}"
+            echo "Run: ${RUN_URL}"
+          } > notes.md
+          gh release create "$TAG" "${files[@]}" \
+            --title "${SRC} ${SRC_REF}" \
+            --notes-file notes.md \
+            --prerelease
