@@ -37,8 +37,3 @@ pip install pyyaml playwright
 python3 tests/test_prepare.py   # workflow input validation and SDK URLs
 python3 tests/test_page.py      # the page in a headless browser against a fake GitHub API
 ```
-
-## Roadmap
-
-Public version: a Cloudflare Worker holding the token (no token on the user side), per-user
-build limits (Turnstile), cleanup of old build releases.
