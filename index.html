@@ -171,6 +171,22 @@
   .pick:focus-within { outline: 3px solid var(--lcd); outline-offset: 2px; }
   .up-summary { margin-top: 12px; font-weight: 500; }
 
+  .dir-toggle { margin-top: 12px; padding: 8px 16px; font-size: 15px; }
+  .dir-toggle[aria-expanded="true"]::after { content: " ▾"; }
+  .dir-toggle[aria-expanded="false"]::after { content: " ▸"; }
+  .dir { margin-top: 14px; border: 2px solid var(--line); border-radius: 12px; padding: 12px; }
+  .dir-items { margin-top: 10px; display: grid; gap: 8px; max-height: 320px; overflow-y: auto; }
+  .dir-app {
+    display: flex; align-items: center; gap: 12px; width: 100%; text-align: left;
+    border: 2px solid var(--line); border-radius: 10px; padding: 10px 12px; background: var(--field); cursor: pointer;
+  }
+  .dir-app:hover, .dir-app:focus-visible { border-color: var(--ink); }
+  .dir-app .ico { font-size: 22px; flex: none; line-height: 1; }
+  .dir-app .meta { min-width: 0; }
+  .dir-app .meta b { display: block; font-size: 16px; }
+  .dir-app .meta small { color: var(--muted); font-size: 13px; display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .dir-empty { color: var(--muted); font-size: 15px; padding: 6px 2px; }
+
   /* ---------- lower sections ---------- */
   .section { margin-top: 44px; }
   .history-item { display: flex; justify-content: space-between; gap: 12px; padding: 10px 0; border-top: 1px solid var(--line); }
@@ -253,6 +269,12 @@
     <label for="repo">App on GitHub</label>
     <input type="text" id="repo" placeholder="github.com/owner/app" required spellcheck="false" autocapitalize="off">
     <p class="hint" id="repoHint" hidden></p>
+    <button type="button" id="dirToggle" class="dir-toggle" aria-expanded="false">Browse apps</button>
+    <div id="dirPanel" class="dir" hidden>
+      <input type="text" id="dirSearch" placeholder="Search apps" spellcheck="false" autocapitalize="off" aria-label="Search apps">
+      <div id="dirItems" class="dir-items"></div>
+      <p class="hint">A short starter list. Paste any repo above to build something that isn't here.</p>
+    </div>
     <div class="pair">
       <div>
         <label for="ref">Branch or tag</label>
@@ -741,6 +763,50 @@
   $("repo").addEventListener("input", scheduleAutofill);
   $("ref").addEventListener("change", () => { if ($("repo").value.trim()) scheduleAutofill(); });
   if ($("repo").value.trim()) scheduleAutofill();
+
+  // ---------- app directory ----------
+  // A short, hand-picked list of popular, general-purpose Flipper apps, each a
+  // public GitHub repo. Clicking one just fills the repo field above; the repo
+  // field still takes any link, so this is a convenience, not the only way in.
+  const APPS = [
+    { name: "TOTP Authenticator", desc: "2FA codes on your Flipper", repo: "akopachov/flipper-zero_authenticator", icon: "🔐" },
+    { name: "Unitemp", desc: "Temperature, humidity & pressure sensors", repo: "quen0n/unitemp-flipperzero", icon: "🌡️" },
+    { name: "GPS NMEA", desc: "GPS receiver readout over UART", repo: "ezod/flipperzero-gps", icon: "🛰️" },
+    { name: "QR Code", desc: "Show QR codes on the screen", repo: "bmatcuk/flipperzero-qrcode", icon: "📷" },
+    { name: "Multi Converter", desc: "Unit converter — length, weight, more", repo: "theisel/fap-multi-converter", icon: "📐" },
+    { name: "Voltage & Current", desc: "INA219 volt & current meter over I2C", repo: "cepetr/flipperzero-i2csniffer", icon: "⚡" },
+  ];
+
+  function renderApps(q) {
+    const needle = (q || "").trim().toLowerCase();
+    const hits = APPS.filter((a) => !needle || (a.name + " " + a.desc).toLowerCase().includes(needle));
+    if (!hits.length) { $("dirItems").innerHTML = `<p class="dir-empty">Nothing matches. Paste the repo link above instead.</p>`; return; }
+    $("dirItems").innerHTML = hits.map((a) =>
+      `<button type="button" class="dir-app" data-repo="${escapeHtml(a.repo)}">` +
+      `<span class="ico" aria-hidden="true">${a.icon}</span>` +
+      `<span class="meta"><b>${escapeHtml(a.name)}</b><small>${escapeHtml(a.desc)}</small></span></button>`
+    ).join("");
+  }
+
+  $("dirToggle").addEventListener("click", () => {
+    const open = $("dirPanel").hidden;
+    $("dirPanel").hidden = !open;
+    $("dirToggle").setAttribute("aria-expanded", String(open));
+    if (open && !$("dirItems").children.length) renderApps("");
+  });
+  $("dirSearch").addEventListener("input", (e) => renderApps(e.target.value));
+  $("dirItems").addEventListener("click", (e) => {
+    const btn = e.target.closest(".dir-app");
+    if (!btn) return;
+    setSource("github");
+    $("repo").value = btn.dataset.repo;
+    $("ref").value = ""; $("ref").dataset.auto = "";
+    $("appDir").value = ""; $("appDir").dataset.auto = "";
+    $("dirPanel").hidden = true;
+    $("dirToggle").setAttribute("aria-expanded", "false");
+    scheduleAutofill();
+    $("repo").scrollIntoView({ block: "center", behavior: "smooth" });
+  });
 
   $("buildForm").addEventListener("submit", async (e) => {
     e.preventDefault();

@@ -386,6 +386,27 @@ with sync_playwright() as p:
     check("missing repo explained", "Can't find" in page.inner_text("#repoHint"))
     ctx.close()
 
+    # --- app directory ---
+    ctx = browser.new_context()
+    page = ctx.new_page()
+    page.route("https://api.github.com/**", FakeGitHub().handle)
+    page.goto(PAGE)
+    check("directory hidden by default", page.is_hidden("#dirPanel"))
+    page.click("#dirToggle")
+    check("directory opens", page.is_visible("#dirPanel"))
+    check("apps listed", page.locator(".dir-app").count() >= 5)
+    page.fill("#dirSearch", "gps")
+    check("search filters apps", page.locator(".dir-app").count() == 1)
+    check("search matches the right app", "GPS NMEA" in page.inner_text("#dirItems"))
+    page.fill("#dirSearch", "zzzznope")
+    check("empty search explained", "Paste the repo link" in page.inner_text("#dirItems"))
+    page.fill("#dirSearch", "gps")
+    page.click(".dir-app")
+    check("click fills repo field", page.input_value("#repo") == "ezod/flipperzero-gps")
+    check("directory closes after pick", page.is_hidden("#dirPanel"))
+    check("github source active after pick", page.get_attribute("#srcGithubBtn", "aria-pressed") == "true")
+    ctx.close()
+
     # --- input validation in the page ---
     ctx = browser.new_context()
     page = ctx.new_page()

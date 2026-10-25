@@ -17,3 +17,8 @@ firmware, latest or archived versions.
   | Unleashed | up.unleashedflip.com   | GitHub releases of DarkFlippers/unleashed-firmware |
 
 - The app being built is third-party code, so the build runs with read-only access and no secrets.
+
+## Credits
+
+The starter app list in "Browse apps" draws on the catalog from
+[joelewis012/flipper-fap-actions](https://github.com/joelewis012/flipper-fap-actions) (MIT).
