@@ -2,6 +2,7 @@
 
 usage: python3 tests/test_page.py [screenshot_dir]
 """
+import base64
 import json
 import pathlib
 import re
@@ -53,6 +54,28 @@ class FakeGitHub:
             "/repos/DarkFlippers/unleashed-firmware/releases": [
                 {"tag_name": "unlshd-094"}, {"tag_name": "unlshd-093"}, {"tag_name": "nightly", "draft": True}],
         }
+        apps = {
+            "owner/app": ("main", {"dev": ["apps/cfs/application.fam", "README.md"]}),
+            "owner/one": ("main", {"main": ["application.fam", "src/app.c"]}),
+            "owner/multi": ("master", {"master": ["a/application.fam", "b/application.fam"]}),
+        }
+        m = re.match(r"^/repos/(owner/[a-z]+)(/.*)?$", path)
+        if m and m.group(1) not in apps:
+            return reply({"message": "Not Found"}, 404)
+        if m:
+            default, trees = apps[m.group(1)]
+            rest = m.group(2) or ""
+            if rest == "":
+                return reply({"default_branch": default})
+            if rest == "/branches":
+                return reply([{"name": b} for b in trees])
+            t = re.match(r"^/git/trees/([^/]+)$", rest)
+            if t and t.group(1) in trees:
+                return reply({"tree": [{"type": "blob", "path": x} for x in trees[t.group(1)]]})
+            if rest.endswith("application.fam"):
+                fam = 'App(appid="cfs_tag_writer", name="CFS Tag Writer", apptype=FlipperAppType.EXTERNAL)'
+                return reply({"content": base64.b64encode(fam.encode()).decode()})
+            return reply({"message": "Not Found"}, 404)
         if path in releases:
             if auth and auth != "Bearer good-token":
                 return reply({"message": "Bad credentials"}, 401)
@@ -114,7 +137,7 @@ with sync_playwright() as p:
     check("settings open when empty", page.locator("#setupDetails").get_attribute("open") is not None)
     page.fill("#repo", "owner/app")
     page.click("#buildBtn")
-    check("asks for settings first", "Settings" in page.inner_text("#formMsg"))
+    check("asks for settings first", "Repo and token" in page.inner_text("#formMsg"))
     page.wait_for_function("document.querySelector('.fw-ver[data-fw=momentum]').options.length > 1")
     opts = page.eval_on_selector_all(".fw-ver[data-fw=official] option", "els => els.map(e => e.textContent)")
     check("official latest from releases", opts == ["Latest (1.5.1)", "1.4.3"])
@@ -131,6 +154,10 @@ with sync_playwright() as p:
     check("settings saved", page.inner_text("#settingsState") == "Saved")
 
     page.fill("#repo", "https://github.com/owner/app/tree/dev/apps/cfs")
+    page.wait_for_function("document.getElementById('repoHint').textContent.startsWith('Found')")
+    check("autofill branch from link", page.input_value("#ref") == "dev")
+    check("autofill folder from link", page.input_value("#appDir") == "apps/cfs")
+    check("app name shown", "CFS Tag Writer (cfs_tag_writer) in apps/cfs" in page.inner_text("#repoHint"))
     page.click("#buildBtn")
     page.wait_for_selector("#files a.file", timeout=15000)
 
@@ -146,9 +173,12 @@ with sync_playwright() as p:
     check("only .fap files listed", files.count() == 2)
     check("download link", files.first.get_attribute("href") == "https://dl/o.fap")
     rows = page.inner_text("#statusRows")
-    check("official done", "Official" in rows and "done" in rows)
-    check("momentum error shown", "failed" in rows and "unknown type <Foo>" in rows)
-    check("error text escaped", "<Foo>" not in page.inner_html("#statusRows"))
+    check("official done", "Official" in rows and "Done" in rows)
+    errs = page.inner_text("#errors")
+    check("momentum error shown", "Failed" in rows and "Momentum didn't build" in errs and "unknown type <Foo>" in errs)
+    check("error text escaped", "<Foo>" not in page.inner_html("#errors"))
+    check("log link for failure", page.locator("#errors a").get_attribute("href") == "https://gh/job/3")
+    check("summary on screen", page.inner_text("#lcdSummary") == "2 of 3 built")
     check("history shows partial", "◐" in page.inner_text("#history"))
     check("run link", page.locator("#runLink a").get_attribute("href") == "https://gh/run/77")
     check("button re-enabled", page.is_enabled("#buildBtn"))
@@ -174,6 +204,28 @@ with sync_playwright() as p:
     page.click("#buildBtn")
     page.wait_for_function("!document.getElementById('formMsg').hidden")
     check("bad token message", "token is invalid" in page.inner_text("#formMsg"))
+    ctx.close()
+
+    # --- autofill scenarios ---
+    ctx = browser.new_context()
+    page = ctx.new_page()
+    page.route("https://api.github.com/**", FakeGitHub().handle)
+    page.goto(PAGE)
+    page.fill("#repo", "owner/one")
+    page.wait_for_function("document.getElementById('repoHint').textContent.startsWith('Found')")
+    check("root app: folder stays empty", page.input_value("#appDir") == "")
+    check("root app: default branch shown", page.get_attribute("#ref", "placeholder") == "main (default)")
+    page.fill("#repo", "owner/multi")
+    page.wait_for_function("document.getElementById('repoHint').textContent.includes('2 apps')")
+    opts = page.eval_on_selector_all("#dirList option", "els => els.map(e => e.value)")
+    check("multiple apps offered", opts == ["a", "b"])
+    page.fill("#appDir", "keep/me")
+    page.fill("#repo", "owner/app/tree/dev/apps/cfs")
+    page.wait_for_timeout(900)
+    check("typed folder not overwritten", page.input_value("#appDir") == "keep/me")
+    page.fill("#repo", "owner/missing")
+    page.wait_for_function("document.getElementById('repoHint').textContent.includes('public')")
+    check("missing repo explained", "Can't find" in page.inner_text("#repoHint"))
     ctx.close()
 
     # --- input validation in the page ---

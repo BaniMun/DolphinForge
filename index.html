@@ -4,169 +4,253 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>DolphinForge</title>
-<meta name="description" content="Build Flipper Zero .fap apps for Official, Momentum and Unleashed firmware.">
+<meta name="description" content="Build Flipper Zero apps for Official, Momentum and Unleashed firmware, latest or archived versions.">
+<meta name="theme-color" content="#e3e4e6" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#202124" media="(prefers-color-scheme: dark)">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600&family=Pixelify+Sans:wght@400;600&display=swap" rel="stylesheet">
 <style>
   :root {
-    --bg: #111214;
-    --panel: #1a1c1f;
-    --panel-2: #222529;
-    --line: #2e3237;
-    --text: #e8e6e3;
-    --muted: #9a9ea4;
-    --accent: #ff8200;
-    --accent-ink: #1a0f00;
-    --ok: #3fb950;
-    --bad: #f85149;
-    --run: #d29922;
-    --radius: 10px;
-    --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    --body: #e3e4e6;        /* white Flipper shell */
+    --field: #f4f4f5;
+    --ink: #17181b;
+    --muted: #63666d;
+    --line: #c7c9cd;
+    --lcd: #ff8a1f;         /* backlit screen */
+    --lcd-ink: #2a1500;
+    --lcd-dim: rgba(42, 21, 0, .38);
+    --bezel: #2b2c30;
+    --bad: #b8261f;
+    --pixel: "Pixelify Sans", ui-monospace, monospace;
+    --sans: "Barlow", system-ui, -apple-system, "Segoe UI", sans-serif;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --body: #202124;      /* black / transparent Flipper shell */
+      --field: #2b2c30;
+      --ink: #ececee;
+      --muted: #9a9ca3;
+      --line: #3d3f44;
+      --bezel: #0d0d0f;
+      --bad: #ff7b72;
+    }
   }
   * { box-sizing: border-box; }
+  html { -webkit-text-size-adjust: 100%; }
   body {
-    margin: 0; background: var(--bg); color: var(--text);
-    font: 15px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    margin: 0; background: var(--body); color: var(--ink);
+    font: 400 17px/1.5 var(--sans);
   }
-  main { max-width: 720px; margin: 0 auto; padding: 24px 16px 64px; }
-  header { display: flex; flex-wrap: wrap; align-items: baseline; column-gap: 12px; margin-bottom: 20px; }
-  h1 { font-size: 22px; margin: 0; letter-spacing: .3px; }
-  h1 span { color: var(--accent); }
-  header small { color: var(--muted); }
-  h2 { font-size: 13px; text-transform: uppercase; letter-spacing: 1px; color: var(--muted); margin: 0 0 12px; }
-  section { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 16px; margin-bottom: 16px; }
-  label { display: block; font-size: 13px; color: var(--muted); margin: 12px 0 4px; }
-  label:first-of-type { margin-top: 0; }
-  input[type=text], input[type=password], select {
-    width: 100%; background: var(--panel-2); color: var(--text); border: 1px solid var(--line);
-    border-radius: 8px; padding: 10px 12px; font: inherit; outline: none;
+  main { max-width: 540px; margin: 0 auto; padding: 20px 16px 72px; }
+  a { color: inherit; text-underline-offset: 3px; }
+  :focus-visible { outline: 3px solid var(--lcd); outline-offset: 2px; }
+  [hidden] { display: none !important; }
+
+  /* ---------- the screen ---------- */
+  .device { background: var(--bezel); border-radius: 22px; padding: 14px; margin-bottom: 28px; }
+  .lcd {
+    position: relative; min-height: 200px; border-radius: 8px; padding: 16px 18px;
+    background-color: var(--lcd); color: var(--lcd-ink); font-family: var(--pixel);
+    background-image:
+      repeating-linear-gradient(0deg, rgba(0,0,0,.045) 0 1px, transparent 1px 4px),
+      repeating-linear-gradient(90deg, rgba(0,0,0,.045) 0 1px, transparent 1px 4px);
+    box-shadow: inset 0 0 0 1px rgba(0,0,0,.25), inset 0 6px 18px rgba(0,0,0,.12);
+    overflow: hidden;
   }
-  input:focus, select:focus { border-color: var(--accent); }
-  .row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
-  .row > div > label { margin-top: 12px; }
-  .chips { display: flex; flex-wrap: wrap; gap: 8px; }
-  .chip { position: relative; margin: 0; }
-  .chip input { position: absolute; opacity: 0; inset: 0; cursor: pointer; }
-  .chip span {
-    display: inline-block; padding: 8px 14px; border-radius: 999px; border: 1px solid var(--line);
-    background: var(--panel-2); color: var(--muted); user-select: none;
+  .lcd-top { display: flex; align-items: center; gap: 10px; font-size: 15px; }
+  .lcd-top svg { width: 32px; height: 14px; flex: none; }
+  .lcd-top .spacer { flex: 1; }
+  .lcd-top .clock { color: var(--lcd-dim); }
+  .lcd h1 { font: 600 44px/1 var(--pixel); margin: 26px 0 10px; letter-spacing: .5px; }
+  .lcd .idle-line { font-size: 17px; margin: 0; }
+  .lcd .build-title {
+    font-size: 17px; margin: 18px 0 10px; padding-bottom: 8px; border-bottom: 2px solid var(--lcd-ink);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
   }
-  .chip input:checked + span { border-color: var(--accent); color: var(--text); background: #2a1d10; }
-  .chip input:focus-visible + span { outline: 2px solid var(--accent); }
-  .fw-list { display: grid; gap: 8px; }
-  .fw-row { display: grid; grid-template-columns: 130px 1fr; gap: 10px; align-items: center; }
-  .fw-row .chip span { width: 100%; text-align: center; }
-  .fw-row select { padding: 8px 10px; }
-  .fw-row select:disabled { opacity: .5; }
-  button {
-    font: inherit; border-radius: 8px; border: 1px solid var(--line); background: var(--panel-2);
-    color: var(--text); padding: 10px 14px; cursor: pointer;
-  }
-  button.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); font-weight: 600; width: 100%; margin-top: 16px; padding: 12px; }
-  button:disabled { opacity: .5; cursor: default; }
-  .muted { color: var(--muted); font-size: 13px; }
-  .hint { color: var(--muted); font-size: 12px; margin-top: 4px; }
-  details summary { cursor: pointer; color: var(--muted); font-size: 13px; text-transform: uppercase; letter-spacing: 1px; }
-  details[open] summary { margin-bottom: 12px; }
-  .status-row { display: flex; align-items: center; gap: 10px; padding: 8px 0; border-top: 1px solid var(--line); }
-  .status-row:first-child { border-top: 0; }
-  .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--line); flex: none; }
-  .dot.run { background: var(--run); animation: pulse 1.2s infinite; }
-  .dot.ok { background: var(--ok); }
-  .dot.bad { background: var(--bad); }
-  @keyframes pulse { 50% { opacity: .35; } }
-  .status-row .name { flex: 1; }
-  .status-row .state { color: var(--muted); font-size: 13px; }
-  .err { color: var(--bad); font-family: var(--mono); font-size: 12px; white-space: pre-wrap; margin: 4px 0 0 20px; }
-  .files { margin-top: 12px; display: grid; gap: 8px; }
+  .lcd-row { display: grid; grid-template-columns: 1fr auto 74px; gap: 12px; font-size: 17px; line-height: 1.9; }
+  .lcd-row .ver { color: var(--lcd-dim); }
+  .lcd-row .st { text-align: right; }
+  .lcd-row[data-state="bad"] .st { background: var(--lcd-ink); color: var(--lcd); padding: 0 6px; }
+  .lcd-row[data-state="run"] .st::after { content: ""; animation: dots 1.2s steps(4) infinite; }
+  @keyframes dots { 0% { content: ""; } 25% { content: "."; } 50% { content: ".."; } 75% { content: "..."; } }
+  .lcd .summary { margin: 10px 0 0; font-size: 17px; }
+  @media (prefers-reduced-motion: reduce) { .lcd-row[data-state="run"] .st::after { animation: none; content: "..."; } }
+
+  /* ---------- results under the screen ---------- */
+  .results { margin: -10px 0 32px; display: grid; gap: 10px; }
   .file {
     display: flex; align-items: center; justify-content: space-between; gap: 12px;
-    background: var(--panel-2); border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px;
-    color: var(--text); text-decoration: none;
+    padding: 14px 16px; border-radius: 12px; background: var(--ink); color: var(--body);
+    text-decoration: none; font-weight: 500;
   }
-  .file:hover { border-color: var(--accent); }
-  .file code { font-family: var(--mono); font-size: 13px; overflow-wrap: anywhere; }
-  .file b { color: var(--accent); font-size: 13px; white-space: nowrap; }
-  a { color: var(--accent); }
-  .history-item { display: flex; justify-content: space-between; gap: 12px; padding: 8px 0; border-top: 1px solid var(--line); font-size: 14px; }
+  .file span { overflow-wrap: anywhere; }
+  .file small { font-size: 14px; opacity: .7; white-space: nowrap; }
+  .error { border-left: 4px solid var(--bad); padding: 4px 0 4px 14px; }
+  .error b { display: block; }
+  .error pre { margin: 4px 0; white-space: pre-wrap; font: 14px/1.45 ui-monospace, Menlo, monospace; color: var(--bad); }
+  .note { margin: 0; color: var(--muted); font-size: 15px; }
+  .note.warn { color: var(--bad); }
+
+  /* ---------- form ---------- */
+  h2 { font: 600 20px/1.3 var(--sans); margin: 0 0 14px; }
+  label { display: block; font-weight: 500; font-size: 15px; margin: 18px 0 6px; }
+  form > label:first-of-type { margin-top: 0; }
+  input[type=text], input[type=password], select {
+    width: 100%; font: inherit; font-size: 17px; color: var(--ink); background: var(--field);
+    border: 2px solid var(--line); border-radius: 10px; padding: 11px 13px; outline: none;
+    -webkit-appearance: none; appearance: none;
+  }
+  select {
+    background-image: linear-gradient(45deg, transparent 50%, currentColor 50%), linear-gradient(135deg, currentColor 50%, transparent 50%);
+    background-position: calc(100% - 18px) 52%, calc(100% - 13px) 52%;
+    background-size: 5px 5px; background-repeat: no-repeat; padding-right: 34px;
+  }
+  input:focus, select:focus { border-color: var(--ink); }
+  select:disabled { opacity: .45; }
+  .pair { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .hint { color: var(--muted); font-size: 14px; margin: 8px 0 0; }
+
+  .fw-list { display: grid; gap: 8px; }
+  .fw-row { display: grid; grid-template-columns: 150px 1fr; gap: 10px; align-items: center; }
+  .chip { position: relative; margin: 0; font-size: 17px; }
+  .chip input { position: absolute; opacity: 0; inset: 0; margin: 0; cursor: pointer; }
+  .chip span {
+    display: flex; align-items: center; gap: 10px; padding: 11px 12px;
+    border: 2px solid var(--line); border-radius: 10px; user-select: none;
+  }
+  .chip span::before {
+    content: ""; width: 14px; height: 14px; border: 2px solid var(--muted); border-radius: 3px; flex: none;
+  }
+  .chip input:checked + span { border-color: var(--ink); }
+  .chip input:checked + span::before { background: var(--lcd); border-color: var(--ink); }
+  .chip input:focus-visible + span { outline: 3px solid var(--lcd); outline-offset: 2px; }
+
+  button {
+    font: 600 17px/1 var(--sans); cursor: pointer; border-radius: 999px;
+    border: 2px solid var(--ink); background: transparent; color: var(--ink); padding: 12px 22px;
+  }
+  button.primary { width: 100%; margin-top: 24px; padding: 17px; background: var(--ink); color: var(--body); }
+  button:disabled { opacity: .5; cursor: default; }
+  #formMsg { margin-top: 12px; }
+
+  /* ---------- lower sections ---------- */
+  .section { margin-top: 44px; }
+  .history-item { display: flex; justify-content: space-between; gap: 12px; padding: 10px 0; border-top: 1px solid var(--line); }
   .history-item:first-child { border-top: 0; }
-  .history-item .when { color: var(--muted); font-size: 12px; white-space: nowrap; }
-  .msg { padding: 10px 12px; border-radius: 8px; background: #2d1414; border: 1px solid #5a2323; color: #ffb4ae; margin-top: 12px; font-size: 14px; }
-  .msg.info { background: #14202d; border-color: #23405a; color: #b4d4ff; }
-  [hidden] { display: none !important; }
-  @media (max-width: 520px) { .row { grid-template-columns: 1fr; gap: 0; } }
+  .history-item .when { color: var(--muted); font-size: 14px; white-space: nowrap; }
+  details summary { cursor: pointer; font-weight: 600; font-size: 20px; list-style: none; }
+  details summary::-webkit-details-marker { display: none; }
+  details summary::after { content: " +"; color: var(--muted); }
+  details[open] summary::after { content: " −"; }
+  details[open] summary { margin-bottom: 4px; }
+  .save-row { display: flex; align-items: center; gap: 14px; margin-top: 16px; }
+  #settingsState { color: var(--muted); font-size: 15px; }
+
+  @media (max-width: 460px) {
+    .lcd h1 { font-size: 36px; }
+    .pair { grid-template-columns: 1fr; gap: 0; }
+    .fw-row { grid-template-columns: minmax(0, .85fr) minmax(0, 1.15fr); gap: 8px; }
+    .fw-row select { font-size: 15px; padding-left: 10px; }
+  }
 </style>
 </head>
 <body>
 <main>
-  <header>
-    <h1>Dolphin<span>Forge</span></h1>
-    <small>Flipper Zero · Official · Momentum · Unleashed</small>
-  </header>
-
-  <section id="setup">
-    <details id="setupDetails">
-      <summary>Settings</summary>
-      <label for="builderRepo">Your DolphinForge repo</label>
-      <input type="text" id="builderRepo" placeholder="login/DolphinForge" autocomplete="off" spellcheck="false">
-      <label for="token">GitHub token</label>
-      <input type="password" id="token" placeholder="github_pat_..." autocomplete="off" spellcheck="false">
-      <div class="hint">Fine-grained token for this repo only: <b>Actions: Read and write</b>, <b>Contents: Read-only</b>. It is stored only in this browser.</div>
-      <button id="saveSettings" type="button" style="margin-top:12px">Save</button>
-      <span id="settingsState" class="muted" style="margin-left:8px"></span>
-    </details>
-  </section>
-
-  <section>
-    <h2>New build</h2>
-    <form id="buildForm" autocomplete="off">
-      <label for="repo">App repository</label>
-      <input type="text" id="repo" placeholder="https://github.com/owner/app or owner/app" required spellcheck="false">
-      <div class="row">
-        <div>
-          <label for="ref">Branch / tag</label>
-          <input type="text" id="ref" placeholder="default" spellcheck="false">
-        </div>
-        <div>
-          <label for="appDir">Folder with application.fam</label>
-          <input type="text" id="appDir" placeholder="repo root" spellcheck="false">
-        </div>
+  <div class="device">
+    <div class="lcd" id="lcd" aria-live="polite">
+      <div class="lcd-top">
+        <svg viewBox="0 0 16 7" shape-rendering="crispEdges" aria-hidden="true" fill="currentColor">
+          <rect x="4" y="0" width="12" height="1"/><rect x="1" y="1" width="15" height="1"/>
+          <rect x="2" y="2" width="14" height="1"/><rect x="6" y="3" width="8" height="1"/>
+          <rect x="7" y="4" width="6" height="1"/><rect x="6" y="5" width="8" height="1"/>
+          <rect x="4" y="6" width="12" height="1"/>
+        </svg>
+        <span id="lcdTopName" hidden>DolphinForge</span>
+        <span class="spacer"></span>
+        <span class="clock" id="lcdClock"></span>
       </div>
-      <label>Firmware</label>
-      <div class="fw-list" id="fwChips">
-        <div class="fw-row">
-          <label class="chip"><input type="checkbox" value="official" checked><span>Official</span></label>
-          <select class="fw-ver" data-fw="official" aria-label="Official version"><option value="">Latest</option></select>
-        </div>
-        <div class="fw-row">
-          <label class="chip"><input type="checkbox" value="momentum" checked><span>Momentum</span></label>
-          <select class="fw-ver" data-fw="momentum" aria-label="Momentum version"><option value="">Latest</option></select>
-        </div>
-        <div class="fw-row">
-          <label class="chip"><input type="checkbox" value="unleashed" checked><span>Unleashed</span></label>
-          <select class="fw-ver" data-fw="unleashed" aria-label="Unleashed version"><option value="">Latest</option></select>
-        </div>
+      <div id="lcdIdle">
+        <h1>DolphinForge</h1>
+        <p class="idle-line">Paste a Flipper app link below and press Build.</p>
       </div>
-      <div class="hint" id="verHint">Versions come from each firmware's official releases. Pick an older one if your Flipper runs an archived firmware.</div>
-      <label for="channel">SDK channel</label>
-      <select id="channel">
-        <option value="release">Release (stable)</option>
-        <option value="dev">Dev</option>
-      </select>
-      <button class="primary" id="buildBtn" type="submit">Build</button>
-      <div id="formMsg" class="msg" hidden></div>
-    </form>
-  </section>
+      <div id="lcdBuild" hidden>
+        <div class="build-title" id="statusTitle"></div>
+        <div id="statusRows"></div>
+        <p class="summary" id="lcdSummary"></p>
+      </div>
+    </div>
+  </div>
 
-  <section id="statusBox" hidden>
-    <h2 id="statusTitle">Status</h2>
-    <div id="statusRows"></div>
-    <div id="files" class="files"></div>
-    <div id="statusMsg" class="msg" hidden></div>
-    <p class="muted" id="runLink" hidden></p>
-  </section>
+  <div class="results" id="statusBox" hidden>
+    <div id="files" class="results"></div>
+    <div id="errors"></div>
+    <p class="note" id="statusMsg" hidden></p>
+    <p class="note" id="runLink" hidden></p>
+  </div>
 
-  <section id="historyBox" hidden>
+  <form id="buildForm" autocomplete="off">
+    <label for="repo">App on GitHub</label>
+    <input type="text" id="repo" placeholder="github.com/owner/app" required spellcheck="false" autocapitalize="off">
+    <p class="hint" id="repoHint" hidden></p>
+    <div class="pair">
+      <div>
+        <label for="ref">Branch or tag</label>
+        <input type="text" id="ref" placeholder="Default branch" list="refList" spellcheck="false" autocapitalize="off">
+        <datalist id="refList"></datalist>
+      </div>
+      <div>
+        <label for="appDir">App folder</label>
+        <input type="text" id="appDir" placeholder="Repo root" list="dirList" spellcheck="false" autocapitalize="off">
+        <datalist id="dirList"></datalist>
+      </div>
+    </div>
+
+    <label>Firmware and version</label>
+    <div class="fw-list" id="fwChips">
+      <div class="fw-row">
+        <label class="chip"><input type="checkbox" value="official" checked><span>Official</span></label>
+        <select class="fw-ver" data-fw="official" aria-label="Official version"><option value="">Latest</option></select>
+      </div>
+      <div class="fw-row">
+        <label class="chip"><input type="checkbox" value="momentum" checked><span>Momentum</span></label>
+        <select class="fw-ver" data-fw="momentum" aria-label="Momentum version"><option value="">Latest</option></select>
+      </div>
+      <div class="fw-row">
+        <label class="chip"><input type="checkbox" value="unleashed" checked><span>Unleashed</span></label>
+        <select class="fw-ver" data-fw="unleashed" aria-label="Unleashed version"><option value="">Latest</option></select>
+      </div>
+    </div>
+    <p class="hint" id="verHint">Versions are listed from each firmware's official releases. Pick the one your Flipper runs.</p>
+
+    <label for="channel">SDK</label>
+    <select id="channel">
+      <option value="release">Stable releases</option>
+      <option value="dev">Development build</option>
+    </select>
+
+    <button class="primary" id="buildBtn" type="submit">Build</button>
+    <p class="note warn" id="formMsg" hidden></p>
+  </form>
+
+  <section class="section" id="historyBox" hidden>
     <h2>Recent builds</h2>
     <div id="history"></div>
+  </section>
+
+  <section class="section">
+    <details id="setupDetails">
+      <summary>Repo and token</summary>
+      <label for="builderRepo">Your DolphinForge repo</label>
+      <input type="text" id="builderRepo" placeholder="login/DolphinForge" spellcheck="false" autocapitalize="off">
+      <label for="token">GitHub token</label>
+      <input type="password" id="token" placeholder="github_pat_…" spellcheck="false" autocapitalize="off">
+      <p class="hint">Fine-grained token for this repo only, with Actions set to read and write and Contents set to read-only. It stays in this browser.</p>
+      <div class="save-row">
+        <button id="saveSettings" type="button">Save</button>
+        <span id="settingsState"></span>
+      </div>
+    </details>
   </section>
 </main>
 
@@ -189,6 +273,13 @@
       catch { return false; }
     },
   };
+
+  // ---------- screen clock (Flipper status bar) ----------
+  function tick() {
+    $("lcdClock").textContent = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  }
+  tick();
+  setInterval(tick, 30000);
 
   // ---------- settings ----------
   function guessBuilderRepo() {
@@ -242,9 +333,9 @@
   }
 
   function explain(err) {
-    if (err.status === 401) return "The token is invalid or expired.";
-    if (err.status === 403) return "The token lacks permissions (Actions: Read and write, Contents: Read-only), or the API rate limit was hit.";
-    if (err.status === 404) return "Can't find the DolphinForge repo or its build.yml workflow. Check the repo name and that the token has access to it.";
+    if (err.status === 401) return "The token is invalid or expired. Paste a new one under Repo and token.";
+    if (err.status === 403) return "The token can't start builds. It needs Actions set to read and write and Contents set to read-only, or the GitHub rate limit was hit.";
+    if (err.status === 404) return "Can't find your DolphinForge repo or its build workflow. Check the repo name under Repo and token.";
     if (err.status === 422) return "GitHub rejected the request: " + err.message;
     return err.message || String(err);
   }
@@ -287,7 +378,7 @@
       catch { failed = true; }
     }));
     if (!failed) store.set("versions", { ts: Date.now(), data });
-    else $("verHint").textContent = "Could not load the version lists right now; Latest still works.";
+    else $("verHint").textContent = "Version lists didn't load. Latest still works; reload the page to try again.";
   }
 
   function syncChannel() {
@@ -312,20 +403,96 @@
 
   function showMsg(el, text, info = false) {
     el.textContent = text;
-    el.classList.toggle("info", info);
+    el.classList.toggle("warn", !info);
     el.hidden = !text;
   }
+
+  // ---------- autofill from the pasted link ----------
+  // Reads the app repo (public, read-only): default branch, branches, and every
+  // application.fam, so branch and folder fill themselves in.
+  let lookup = 0;
+  let lookupTimer = null;
+
+  function setAuto(id, value) {
+    const el = $(id);
+    if (el.value && el.dataset.auto !== "1") return; // never overwrite what the person typed
+    el.value = value;
+    el.dataset.auto = value ? "1" : "";
+  }
+  ["ref", "appDir"].forEach((id) => $(id).addEventListener("input", () => { $(id).dataset.auto = ""; }));
+
+  function repoHint(text, warn = false) {
+    const el = $("repoHint");
+    el.textContent = text;
+    el.style.color = warn ? "var(--bad)" : "";
+    el.hidden = !text;
+  }
+
+  async function readPublic(path) {
+    try { return await gh(path); }
+    catch (err) { if (err.status === 401 || err.status === 403) return gh(path, { anonymous: true }); throw err; }
+  }
+
+  function famInfo(text) {
+    const pick = (key) => (text.match(new RegExp(key + "\\s*=\\s*[\"']([^\"']+)[\"']")) || [])[1];
+    return { appid: pick("appid"), name: pick("name") };
+  }
+
+  async function autofill() {
+    const my = ++lookup;
+    const parsed = normRepo($("repo").value);
+    if (!/^[A-Za-z0-9-]+\/[A-Za-z0-9._-]+$/.test(parsed.repo)) { repoHint(""); return; }
+    if (parsed.ref !== undefined) { setAuto("ref", parsed.ref); setAuto("appDir", parsed.dir); }
+    else { setAuto("ref", ""); setAuto("appDir", ""); }
+    repoHint("Looking up the app…");
+    try {
+      const info = await readPublic(`/repos/${parsed.repo}`);
+      if (my !== lookup) return;
+      const ref = $("ref").value.trim() || info.default_branch;
+      $("ref").placeholder = `${info.default_branch} (default)`;
+      readPublic(`/repos/${parsed.repo}/branches?per_page=50`).then((br) => {
+        if (my === lookup) $("refList").innerHTML = br.map((b) => `<option value="${escapeHtml(b.name)}">`).join("");
+      }).catch(() => {});
+
+      const tree = await readPublic(`/repos/${parsed.repo}/git/trees/${encodeURIComponent(ref)}?recursive=1`);
+      if (my !== lookup) return;
+      const fams = (tree.tree || []).filter((t) => t.type === "blob" && /(^|\/)application\.fam$/.test(t.path))
+        .map((t) => t.path.replace(/\/?application\.fam$/, ""));
+      $("dirList").innerHTML = fams.map((d) => `<option value="${escapeHtml(d)}">`).join("");
+      if (!fams.length) return repoHint(`No application.fam on ${ref}. This doesn't look like a Flipper app.`, true);
+      if (fams.length > 1 && !$("appDir").value) {
+        return repoHint(`Found ${fams.length} apps. Pick one in App folder.`);
+      }
+      const dir = $("appDir").value.trim() || fams[0];
+      if (fams.length === 1) setAuto("appDir", fams[0]);
+      const file = await readPublic(`/repos/${parsed.repo}/contents/${dir ? dir + "/" : ""}application.fam?ref=${encodeURIComponent(ref)}`);
+      if (my !== lookup) return;
+      const app = famInfo(atob((file.content || "").replace(/\s/g, "")));
+      repoHint(app.name ? `Found ${app.name}${app.appid ? " (" + app.appid + ")" : ""}${dir ? " in " + dir : ""}.` : "Found the app.");
+    } catch (err) {
+      if (my !== lookup) return;
+      repoHint(err.status === 404 ? "Can't find this repo or branch. It has to be public." : "Couldn't look up the app: " + explain(err), true);
+    }
+  }
+
+  function scheduleAutofill() {
+    clearTimeout(lookupTimer);
+    lookupTimer = setTimeout(autofill, 500);
+  }
+  $("repo").addEventListener("input", scheduleAutofill);
+  $("ref").addEventListener("change", () => { if ($("repo").value.trim()) scheduleAutofill(); });
+  if ($("repo").value.trim()) scheduleAutofill();
 
   $("buildForm").addEventListener("submit", async (e) => {
     e.preventDefault();
     showMsg($("formMsg"), "");
     if (!settings.builderRepo || !settings.token) {
       $("setupDetails").open = true;
-      return showMsg($("formMsg"), "Fill in and save Settings first: your DolphinForge repo and a token.");
+      return showMsg($("formMsg"), "Add your repo and token under Repo and token first.");
     }
     const parsed = normRepo($("repo").value);
     if (!/^[A-Za-z0-9-]+\/[A-Za-z0-9._-]+$/.test(parsed.repo)) {
-      return showMsg($("formMsg"), "Enter the repo as owner/name or a GitHub link.");
+      return showMsg($("formMsg"), "Enter the app as owner/name or paste its GitHub link.");
     }
     const ref = $("ref").value.trim() || parsed.ref || "";
     const dir = $("appDir").value.trim() || parsed.dir || "";
@@ -373,21 +540,29 @@
   let tracking = 0;
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
+  function jobState(job) {
+    if (!job) return ["wait", "Waiting"];
+    if (job.status === "in_progress") return ["run", "Building"];
+    if (job.status !== "completed") return ["wait", "Waiting"];
+    return {
+      success: ["ok", "Done"], failure: ["bad", "Failed"],
+      cancelled: ["bad", "Stopped"], skipped: ["wait", "Skipped"],
+    }[job.conclusion] || ["bad", job.conclusion];
+  }
+
   function renderRows(build, jobs) {
-    const rows = build.fws.map((fw) => {
+    $("statusRows").innerHTML = build.fws.map((fw) => {
+      const [state, text] = jobState(jobs.find((j) => j.name === FW_LABELS[fw]));
+      return `<div class="lcd-row" data-state="${state}"><span>${FW_LABELS[fw]}</span>` +
+        `<span class="ver">${escapeHtml(versionLabel(build, fw))}</span><span class="st">${text}</span></div>`;
+    }).join("");
+    $("errors").innerHTML = build.fws.map((fw) => {
       const job = jobs.find((j) => j.name === FW_LABELS[fw]);
-      let cls = "", text = "queued";
-      if (job) {
-        if (job.status === "completed") {
-          cls = job.conclusion === "success" ? "ok" : "bad";
-          text = { success: "done", failure: "failed", cancelled: "cancelled", skipped: "skipped" }[job.conclusion] || job.conclusion;
-        } else if (job.status === "in_progress") { cls = "run"; text = "building…"; }
-      }
-      const err = job && job._error ? `<div class="err">${escapeHtml(job._error)}</div>` : "";
-      const link = job && cls === "bad" ? ` · <a href="${job.html_url}" target="_blank" rel="noopener">log</a>` : "";
-      return `<div><div class="status-row"><span class="dot ${cls}"></span><span class="name">${FW_LABELS[fw]} <span class="muted">${escapeHtml(versionLabel(build, fw))}</span></span><span class="state">${text}${link}</span></div>${err}</div>`;
-    });
-    $("statusRows").innerHTML = rows.join("");
+      if (!job || jobState(job)[0] !== "bad") return "";
+      return `<div class="error"><b>${FW_LABELS[fw]} didn't build</b>` +
+        (job._error ? `<pre>${escapeHtml(job._error)}</pre>` : "") +
+        `<a href="${job.html_url}" target="_blank" rel="noopener">Open the build log</a></div>`;
+    }).join("");
   }
 
   function versionLabel(build, fw) {
@@ -406,7 +581,7 @@
       if (run) return run;
       await sleep(3000);
     }
-    throw new Error("GitHub did not start the build within 90 s. Check the Actions tab of your DolphinForge repo.");
+    throw new Error("GitHub didn't start the build within 90 seconds. Check the Actions tab of your DolphinForge repo.");
   }
 
   async function addErrors(jobs) {
@@ -422,9 +597,14 @@
 
   async function track(build) {
     const my = ++tracking;
+    $("lcdIdle").hidden = true;
+    $("lcdTopName").hidden = false;
+    $("lcdBuild").hidden = false;
     $("statusBox").hidden = false;
     $("statusTitle").textContent = `${build.repo}${build.ref ? " @ " + build.ref : ""}`;
+    $("lcdSummary").textContent = "";
     $("files").innerHTML = "";
+    $("errors").innerHTML = "";
     $("runLink").hidden = true;
     showMsg($("statusMsg"), "");
     renderRows(build, []);
@@ -433,7 +613,7 @@
       if (my !== tracking) return;
       build.runId = run.id;
       saveHistory(build);
-      $("runLink").innerHTML = `<a href="${run.html_url}" target="_blank" rel="noopener">View on GitHub</a>`;
+      $("runLink").innerHTML = `<a href="${run.html_url}" target="_blank" rel="noopener">View this build on GitHub</a>`;
       $("runLink").hidden = false;
 
       let jobs = [];
@@ -449,7 +629,7 @@
         const prep = jobs.find((x) => x.name === "prepare");
         if (prep && prep.conclusion === "failure") {
           await addErrors([prep]);
-          showMsg($("statusMsg"), "Invalid input: " + (prep._error || "see the log on GitHub."));
+          showMsg($("statusMsg"), "The build was rejected: " + (prep._error || "see the log on GitHub."));
         }
         if (r.status === "completed") break;
         await sleep(4000);
@@ -467,14 +647,16 @@
       const rel = await gh(`/repos/${settings.builderRepo}/releases/tags/build-${build.id}`);
       const assets = (rel.assets || []).filter((a) => a.name.endsWith(".fap"));
       $("files").innerHTML = assets.map((a) =>
-        `<a class="file" href="${a.browser_download_url}" download><code>${escapeHtml(a.name)}</code><b>${(a.size / 1024).toFixed(1)} KB ↓</b></a>`
+        `<a class="file" href="${a.browser_download_url}" download><span>${escapeHtml(a.name)}</span><small>${(a.size / 1024).toFixed(1)} KB</small></a>`
       ).join("");
       build.files = assets.map((a) => ({ name: a.name, url: a.browser_download_url }));
       build.state = assets.length === build.fws.length ? "ok" : assets.length ? "partial" : "bad";
-      if (assets.length) showMsg($("statusMsg"), "Copy the file for your firmware to the apps/ folder on the SD card (qFlipper or the Flipper mobile app).", true);
+      $("lcdSummary").textContent = `${assets.length} of ${build.fws.length} built`;
+      if (assets.length) showMsg($("statusMsg"), "Copy the file for your firmware to apps/ on the SD card with qFlipper or the Flipper app.", true);
     } catch (err) {
       build.state = "bad";
-      if (err.status === 404) showMsg($("statusMsg"), "No firmware built successfully. Open the \"log\" link next to an error or view the build on GitHub.");
+      $("lcdSummary").textContent = `0 of ${build.fws.length} built`;
+      if (err.status === 404) showMsg($("statusMsg"), "Nothing built. Open the build log above to see why.");
       else showMsg($("statusMsg"), explain(err));
     }
     saveHistory(build);
@@ -494,7 +676,7 @@
     const icon = { ok: "✓", partial: "◐", bad: "✕" };
     $("history").innerHTML = list.map((b) => `
       <div class="history-item">
-        <span>${icon[b.state] || "…"} <a href="#" data-id="${b.id}">${escapeHtml(b.repo)}</a>${b.ref ? " <span class='muted'>@ " + escapeHtml(b.ref) + "</span>" : ""}</span>
+        <span>${icon[b.state] || "…"} <a href="#" data-id="${b.id}">${escapeHtml(b.repo)}</a>${b.ref ? " <span class='when'>@ " + escapeHtml(b.ref) + "</span>" : ""}</span>
         <span class="when">${new Date(b.started).toLocaleString(undefined, { dateStyle: "short", timeStyle: "short" })}</span>
       </div>`).join("");
   }
@@ -508,7 +690,7 @@
     $("repo").value = b.repo; $("ref").value = b.ref || ""; $("appDir").value = b.dir || "";
     $("buildBtn").disabled = true;
     track(b);
-    window.scrollTo({ top: $("statusBox").offsetTop - 16, behavior: "smooth" });
+    window.scrollTo({ top: 0, behavior: "smooth" });
   });
 
   renderHistory();
