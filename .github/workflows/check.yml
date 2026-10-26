@@ -1,0 +1,48 @@
+name: Temporary catalog manifest check
+# Runs the Flipper Apps Catalog bundler on a manifest, the way the catalog's
+# own PR check does (lint skipped). Lives on a throwaway branch only.
+on: push
+permissions:
+  contents: read
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: flipperdevices/flipper-application-catalog
+      - name: Add manifest
+        run: |
+          mkdir -p applications/NFC/cfs_tag_writer_plus
+          cat > applications/NFC/cfs_tag_writer_plus/manifest.yml <<'MANIFEST'
+          sourcecode:
+            type: git
+            location:
+              origin: https://github.com/BaniMun/cfs-tag-writer.git
+              commit_sha: d03e5b683d1cbc296fe40d837018ed1030d14de5
+          description: "@.catalog/README.md"
+          changelog: "@changelog.md"
+          screenshots:
+            - .catalog/screenshots/00_main_menu.png
+            - .catalog/screenshots/06_write_color.png
+            - .catalog/screenshots/08_write_confirm.png
+            - .catalog/screenshots/09_write_hold.png
+            - .catalog/screenshots/10_write_done.png
+            - .catalog/screenshots/12_saved_browser.png
+            - .catalog/screenshots/26_help_index.png
+          MANIFEST
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install bundler
+        run: pip install -r tools/requirements.txt
+      - name: Bundle
+        run: |
+          set -o pipefail
+          if python3 tools/bundle.py --nolint applications/NFC/cfs_tag_writer_plus/manifest.yml bundle.zip 2>&1 | tee out.txt; then
+            unzip -l bundle.zip | tail -25
+            echo "::notice::BUNDLE OK $(unzip -l bundle.zip | tail -1)"
+          else
+            echo "::error::$(tail -15 out.txt | tr '\n' '|')"
+            exit 1
+          fi
