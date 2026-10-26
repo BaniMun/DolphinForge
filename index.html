@@ -23,8 +23,12 @@
      Flipper). On the screen everything follows the device's UI: pixel type,
      inverted selection, ◀ value ▶ pickers, an OK button for Build. */
   :root {
-    --body: #e3e4e6;        /* white Flipper shell */
-    --bezel: #2b2c30;
+    --body: #e3e4e6;
+    --bezel: #f7f7f8;       /* white Flipper shell */
+    --bezel-text: #5c5f66;
+    --bezel-btn: #c3c5ca;
+    --bezel-btn-text: #3c3e44;
+    --bezel-edge: inset 0 0 0 1px rgba(0,0,0,.07), 0 8px 24px rgba(0,0,0,.08);
     --shell-ink: #17181b;
     --shell-muted: #63666d;
     --shell-line: #c7c9cd;
@@ -41,7 +45,11 @@
   @media (prefers-color-scheme: dark) {
     :root:not([data-theme="light"]) {
       --body: #202124;      /* black / transparent Flipper shell */
-      --bezel: #0d0d0f;
+      --bezel: #0d0d0f;     /* black Flipper shell */
+      --bezel-text: #9a9ca3;
+      --bezel-btn: #4a4b50;
+      --bezel-btn-text: #c3c5ca;
+      --bezel-edge: none;
       --shell-ink: #ececee;
       --shell-muted: #9a9ca3;
       --shell-line: #3d3f44;
@@ -49,7 +57,11 @@
   }
   :root[data-theme="dark"] {
       --body: #202124;      /* black / transparent Flipper shell */
-      --bezel: #0d0d0f;
+      --bezel: #0d0d0f;     /* black Flipper shell */
+      --bezel-text: #9a9ca3;
+      --bezel-btn: #4a4b50;
+      --bezel-btn-text: #c3c5ca;
+      --bezel-edge: none;
       --shell-ink: #ececee;
       --shell-muted: #9a9ca3;
       --shell-line: #3d3f44;
@@ -66,16 +78,16 @@
   [hidden] { display: none !important; }
 
   /* ---------- the shell ---------- */
-  .device { background: var(--bezel); border-radius: 26px; padding: 12px 14px 14px; }
-  .device-head { display: flex; align-items: center; gap: 10px; padding: 2px 6px 12px; color: #9a9ca3; font-size: 14px; }
+  .device { background: var(--bezel); box-shadow: var(--bezel-edge); border-radius: 26px; padding: 12px 14px 14px; }
+  .device-head { display: flex; align-items: center; gap: 10px; padding: 2px 6px 12px; color: var(--bezel-text); font-size: 14px; }
   .theme-btn {
     margin-left: auto; display: inline-flex; align-items: center; gap: 6px; flex: none;
-    border: 2px solid #4a4b50; color: #c3c5ca; background: transparent; font: 500 13px/1 var(--sans);
+    border: 2px solid var(--bezel-btn); color: var(--bezel-btn-text); background: transparent; font: 500 13px/1 var(--sans);
     padding: 6px 12px; border-radius: 999px; cursor: pointer;
   }
   .theme-btn svg { width: 14px; height: 14px; }
   /* status LED, like the Flipper's RGB LED */
-  .led { width: 10px; height: 10px; border-radius: 50%; background: #4a4b50; flex: none; }
+  .led { width: 10px; height: 10px; border-radius: 50%; background: var(--bezel-btn); flex: none; }
   .led[data-led="ready"] { background: #3ddc6a; box-shadow: 0 0 8px #3ddc6a; }
   .led[data-led="busy"] { background: #3a8bff; box-shadow: 0 0 8px #3a8bff; animation: blink 1s steps(2, jump-none) infinite; }
   .led[data-led="error"] { background: #ff4b3e; box-shadow: 0 0 8px #ff4b3e; animation: blink 1.4s steps(2, jump-none) infinite; }
