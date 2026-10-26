@@ -4,6 +4,10 @@ name: DolphinForge build request
 # account, and this workflow builds the app with build.yml and replies in the
 # issue with the .fap files.
 #
+# Notifications: one per request. While building, the issue only gets a
+# "building" label (labels don't send emails); at the end a single comment
+# with the files closes the issue.
+#
 # Security: the issue text is untrusted. It is only read from environment
 # variables by Python, and everything taken from it is validated again by
 # build.yml's prepare job before any code is checked out. Building runs with
@@ -56,10 +60,9 @@ jobs:
           def gh(*args, data=None):
               return subprocess.run(["gh", *args], input=data, capture_output=True, text=True, check=True).stdout
 
-          def reply(text, close=False):
-              gh("issue", "comment", os.environ["ISSUE_NUMBER"], "--body-file", "-", data=text)
-              if close:
-                  gh("issue", "close", os.environ["ISSUE_NUMBER"], "--reason", "not planned")
+          def refuse(text):
+              # one comment, posted together with closing the issue
+              gh("issue", "close", os.environ["ISSUE_NUMBER"], "--reason", "not planned", "--comment", text)
 
           def output(**kv):
               with open(os.environ["GITHUB_OUTPUT"], "a") as out:
@@ -88,7 +91,7 @@ jobs:
           # owner/name reads better in replies; build.yml accepts either form.
           repo = re.sub(r"(\.git)?/*$", "", re.sub(r"^(https?://)?(www\.)?github\.com/", "", repo))
           if not repo:
-              reply("Please add the app's GitHub link in **App repo** and open a new request.", close=True)
+              refuse("Please add the app's GitHub link in **App repo** and open a new request.")
               output(ok="false")
               sys.exit(0)
 
@@ -101,8 +104,8 @@ jobs:
           count = sum(1 for i in mine if i["created_at"] >= since)
           limit = int(os.environ["DAILY_LIMIT"])
           if count > limit:
-              reply(f"You've reached the limit of {limit} builds per day. Please try again tomorrow, "
-                    "or build in your own fork of DolphinForge (see the README).", close=True)
+              refuse(f"You've reached the limit of {limit} builds per day. Please try again tomorrow, "
+                     "or build in your own fork of DolphinForge (see the README).")
               output(ok="false")
               sys.exit(0)
 
@@ -114,9 +117,9 @@ jobs:
                  firmwares=firmwares or "official,momentum,unleashed",
                  versions=versions, channel=(field("SDK channel").lower() or "release"),
                  request_id=f"issue-{os.environ['ISSUE_NUMBER']}")
-          reply(f"Building **{repo}**{' @ ' + ref if ref else ''}{', folder ' + folder if folder else ''} "
-                f"for {fw_text}. "
-                f"You'll get the files here in a few minutes. Progress: {os.environ['RUN_URL']}")
+          # Building: mark the issue quietly; the files come in one comment at the end.
+          gh("issue", "edit", os.environ["ISSUE_NUMBER"], "--add-label", "building")
+          print(f"Building {repo}{' @ ' + ref if ref else ''}{', folder ' + folder if folder else ''} for {fw_text}")
           EOF
 
   build:
@@ -174,7 +177,7 @@ jobs:
           failed = [labels.get(f, f) for f in wanted if f not in built]
 
           if lines:
-              text = ["Your app is ready:", "", "| Firmware | File |", "|---|---|", *lines, "",
+              text = ["Your app is ready.", "", "| Firmware | File |", "|---|---|", *lines, "",
                       "Copy the file for your firmware to `apps/` on the SD card (with qFlipper or the Flipper app). "
                       f"You can rename it to just `{app or 'the_app'}.fap`."]
               if failed:
@@ -186,6 +189,8 @@ jobs:
                       f"The log shows what went wrong: {os.environ['RUN_URL']}",
                       "If you think it's a DolphinForge problem, open a **Build problem** issue."]
               reason = "not planned"
-          gh("issue", "comment", os.environ["ISSUE_NUMBER"], "--body-file", "-", data="\n".join(text))
-          gh("issue", "close", os.environ["ISSUE_NUMBER"], "--reason", reason)
+          num = os.environ["ISSUE_NUMBER"]
+          gh("issue", "edit", num, "--remove-label", "building", check=False)
+          # the only comment of the request, posted together with closing it
+          gh("issue", "close", num, "--reason", reason, "--comment", "\n".join(text))
           EOF

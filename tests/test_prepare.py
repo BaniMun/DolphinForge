@@ -175,8 +175,8 @@ check("issue form accepted", code == 0 and o.get("ok") == "true" and o.get("repo
 check("empty fields become empty", o.get("ref") == "" and o.get("app_dir") == "" and o.get("versions") == "")
 check("firmwares normalised", o.get("firmwares") == "official,momentum,unleashed")
 check("request id from issue number", o.get("request_id") == "issue-42")
-start = next((c["stdin"] for c in calls if c["args"][:2] == ["issue", "comment"]), "")
-check("starts with a reply", start.startswith("Building **owner/app**") and "for Official, Momentum, Unleashed." in start)
+check("no comment while building (no email)", not any(c["args"][:2] == ["issue", "comment"] for c in calls))
+check("marked with a building label", any(c["args"][:2] == ["issue", "edit"] and "building" in c["args"] for c in calls))
 check("issue stays open while building", not any(c["args"][:2] == ["issue", "close"] for c in calls))
 
 code, o, calls, _ = run_script(accept, {"ISSUE_BODY": form(repo="https://github.com/owner/app/tree/dev/apps/cfs",
@@ -186,8 +186,9 @@ check("tree link split into repo/ref/folder", (o.get("repo"), o.get("ref"), o.ge
 check("chosen firmware and version", o.get("firmwares") == "momentum" and o.get("versions") == "momentum=mntm-010")
 
 code, o, calls, _ = run_script(accept, {"ISSUE_BODY": form(), "FAKE_ISSUES": recent(6)})
-check("6th build in a day refused", o.get("ok") == "false"
-      and any("limit of 5" in c["stdin"] for c in calls) and any(c["args"][:2] == ["issue", "close"] for c in calls))
+check("6th build in a day refused in one closing comment", o.get("ok") == "false"
+      and any(c["args"][:2] == ["issue", "close"] and any("limit of 5" in a for a in c["args"]) for c in calls)
+      and not any(c["args"][:2] == ["issue", "comment"] for c in calls))
 code, o, calls, _ = run_script(accept, {"ISSUE_BODY": form(), "FAKE_ISSUES": recent(5)})
 check("5th build in a day allowed", o.get("ok") == "true")
 old = json.dumps([{"created_at": (now - datetime.timedelta(days=2)).strftime("%Y-%m-%dT%H:%M:%SZ")}] * 9)
@@ -203,14 +204,18 @@ assets = json.dumps([{"name": "my_app-official-latest.fap", "url": "https://dl/o
                      {"name": "my_app-momentum-latest.fap", "url": "https://dl/m"}])
 code, o, calls, err = run_script(report, {"TAG": "build-issue-42", "FIRMWARES": "official,momentum,unleashed",
                                           "FAKE_ASSETS": assets})
-reply = next((c["stdin"] for c in calls if c["args"][:2] == ["issue", "comment"]), "")
+close = next((c["args"] for c in calls if c["args"][:2] == ["issue", "close"]), [])
+reply = close[close.index("--comment") + 1] if "--comment" in close else ""
+check("report is a single closing comment", not any(c["args"][:2] == ["issue", "comment"] for c in calls))
+check("building label removed", any(c["args"][:2] == ["issue", "edit"] and "--remove-label" in c["args"] for c in calls))
 check("report lists the files", code == 0 and "[my_app-official-latest.fap](https://dl/o)" in reply and "| Momentum |" in reply)
 check("report in firmware order", reply.index("| Official |") < reply.index("| Momentum |"))
 check("report names the plain file name", "`my_app.fap`" in reply)
 check("report names the firmware that failed", "Didn't build for: Unleashed" in reply)
-check("issue closed as completed", any(c["args"][:2] == ["issue", "close"] and "completed" in c["args"] for c in calls))
+check("issue closed as completed", "completed" in close)
 code, o, calls, err = run_script(report, {"TAG": "build-issue-42", "FIRMWARES": "official"})
-reply = next((c["stdin"] for c in calls if c["args"][:2] == ["issue", "comment"]), "")
+close = next((c["args"] for c in calls if c["args"][:2] == ["issue", "close"]), [])
+reply = close[close.index("--comment") + 1] if "--comment" in close else ""
 check("no release: says it didn't build", code == 0 and "didn't build for any firmware" in reply
       and any(c["args"][:2] == ["issue", "close"] and "not planned" in c["args"] for c in calls))
 
