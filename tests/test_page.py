@@ -477,6 +477,9 @@ with sync_playwright() as p:
     check("search matches the right app", "GPS NMEA" in page.inner_text("#dirItems"))
     page.fill("#dirSearch", "zzzznope")
     check("empty search explained", "Paste the repo link" in page.inner_text("#dirItems"))
+    page.fill("#dirSearch", "filament")
+    check("CFS Tag Writer listed", page.locator(".dir-app").count() == 1
+          and page.get_attribute(".dir-app", "data-repo") == "BaniMun/cfs-tag-writer")
     page.fill("#dirSearch", "gps")
     page.click(".dir-app")
     check("click fills repo field", page.input_value("#repo") == "ezod/flipperzero-gps")
