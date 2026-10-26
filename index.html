@@ -111,7 +111,7 @@
   .rule { height: 2px; background: var(--dots); margin: 22px 0; border: 0; }
 
   /* status area at the top of the screen */
-  .lcd { min-height: 150px; }
+  .lcd { min-height: 124px; }
   .lcd-top { display: flex; align-items: center; gap: 10px; font-size: 15px; }
   .lcd-top svg { width: 32px; height: 14px; flex: none; }
   .lcd-top .spacer { flex: 1; }
@@ -316,6 +316,29 @@
   .save-row { display: flex; align-items: center; gap: 14px; margin-top: 16px; }
   #settingsState { color: var(--lcd-dim); font-size: 15px; }
 
+  /* Wide screens: a landscape Flipper display, status and history on the
+     left, the build form on the right, split by a dotted line. */
+  @media (min-width: 980px) {
+    main { max-width: 1120px; padding-top: 28px; }
+    .device { padding: 14px 18px 18px; border-radius: 32px; }
+    .screen {
+      display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.1fr); column-gap: 0;
+      grid-template-rows: auto auto auto auto auto 1fr; padding: 18px 0 26px;
+    }
+    .screen > .lcd-top { grid-column: 1 / -1; grid-row: 1; padding: 0 26px 14px; margin-bottom: 4px; background: var(--dots) bottom / 100% 2px no-repeat; }
+    .screen > .lcd { grid-column: 1; grid-row: 2; min-height: 0; }
+    .screen > #statusBox { grid-column: 1; grid-row: 3; }
+    .screen > #historyBox { grid-column: 1; grid-row: 4; margin-top: 30px; }
+    .screen > .setup { grid-column: 1; grid-row: 5; margin-top: 30px; }
+    .screen > form { grid-column: 2; grid-row: 2 / 7; padding-top: 22px;
+      background: repeating-linear-gradient(180deg, var(--lcd-ink) 0 2px, transparent 2px 6px) left top / 2px 100% no-repeat; }
+    .screen > .lcd, .screen > #statusBox, .screen > #historyBox, .screen > .setup { padding: 0 30px 0 26px; }
+    .screen > form { padding-left: 30px; padding-right: 26px; }
+    .screen > hr.rule, #historyBox > hr.rule { display: none; }
+    .lcd h1 { font-size: 56px; margin-top: 28px; }
+    .lcd .idle-line { font-size: 18px; }
+  }
+
   @media (max-width: 460px) {
     main { padding-top: 12px; }
     .device { padding: 10px 8px 8px; border-radius: 22px; }
@@ -340,21 +363,21 @@
     </div>
 
     <div class="screen">
+    <div class="lcd-top">
+      <svg viewBox="0 0 16 7" shape-rendering="crispEdges" aria-hidden="true" fill="currentColor">
+        <rect x="4" y="0" width="12" height="1"/><rect x="1" y="1" width="15" height="1"/>
+        <rect x="2" y="2" width="14" height="1"/><rect x="6" y="3" width="8" height="1"/>
+        <rect x="7" y="4" width="6" height="1"/><rect x="6" y="5" width="8" height="1"/>
+        <rect x="4" y="6" width="12" height="1"/>
+      </svg>
+      <span id="lcdTopName" hidden>DolphinForge</span>
+      <span class="spacer"></span>
+      <span class="clock" id="lcdClock"></span>
+      <svg class="batt" viewBox="0 0 11 5" shape-rendering="crispEdges" aria-hidden="true" fill="currentColor">
+        <path d="M0 0h10v1H0zM0 4h10v1H0zM0 1h1v3H0zM9 1h1v3H9zM10 2h1v1h-1zM2 2h6v1H2z"/>
+      </svg>
+    </div>
     <div class="lcd" id="lcd" aria-live="polite">
-      <div class="lcd-top">
-        <svg viewBox="0 0 16 7" shape-rendering="crispEdges" aria-hidden="true" fill="currentColor">
-          <rect x="4" y="0" width="12" height="1"/><rect x="1" y="1" width="15" height="1"/>
-          <rect x="2" y="2" width="14" height="1"/><rect x="6" y="3" width="8" height="1"/>
-          <rect x="7" y="4" width="6" height="1"/><rect x="6" y="5" width="8" height="1"/>
-          <rect x="4" y="6" width="12" height="1"/>
-        </svg>
-        <span id="lcdTopName" hidden>DolphinForge</span>
-        <span class="spacer"></span>
-        <span class="clock" id="lcdClock"></span>
-        <svg class="batt" viewBox="0 0 11 5" shape-rendering="crispEdges" aria-hidden="true" fill="currentColor">
-          <path d="M0 0h10v1H0zM0 4h10v1H0zM0 1h1v3H0zM9 1h1v3H9zM10 2h1v1h-1zM2 2h6v1H2z"/>
-        </svg>
-      </div>
       <div id="lcdIdle">
         <h1>DolphinForge</h1>
         <p class="idle-line">Paste a Flipper app link below and press Build.</p>
@@ -463,7 +486,7 @@
     </section>
 
     <hr class="rule">
-    <details id="setupDetails">
+    <details id="setupDetails" class="setup">
       <summary>Repo and token</summary>
       <label for="builderRepo">Your DolphinForge repo</label>
       <input type="text" id="builderRepo" placeholder="login/DolphinForge" spellcheck="false" autocapitalize="off">
@@ -588,7 +611,7 @@
   }
   async function checkReady() {
     if (busy) return;
-    if (!settings.builderRepo || !settings.token) return setLed("error", "Add your repo and token at the bottom");
+    if (!settings.builderRepo || !settings.token) return setLed("error", "Add your repo and token below");
     setLed("off", "Checking…");
     try {
       await gh(`/repos/${settings.builderRepo}`);
