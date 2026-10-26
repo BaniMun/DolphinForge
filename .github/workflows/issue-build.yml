@@ -85,6 +85,8 @@ jobs:
               repo = m.group(1)
               ref = ref or m.group(2)
               folder = folder or (m.group(3) or "")
+          # owner/name reads better in replies; build.yml accepts either form.
+          repo = re.sub(r"(\.git)?/*$", "", re.sub(r"^(https?://)?(www\.)?github\.com/", "", repo))
           if not repo:
               reply("Please add the app's GitHub link in **App repo** and open a new request.", close=True)
               output(ok="false")
@@ -105,13 +107,15 @@ jobs:
               sys.exit(0)
 
           firmwares = ",".join(f.strip().lower() for f in re.split(r"[,\s]+", field("Firmwares")) if f.strip())
+          names = {"official": "Official", "momentum": "Momentum", "unleashed": "Unleashed"}
+          fw_text = ", ".join(names.get(f, f) for f in (firmwares or "official,momentum,unleashed").split(","))
           versions = ",".join(v.strip() for v in re.split(r"[,\s]+", field("Firmware versions")) if v.strip())
           output(ok="true", repo=repo, ref=ref, app_dir=folder,
                  firmwares=firmwares or "official,momentum,unleashed",
                  versions=versions, channel=(field("SDK channel").lower() or "release"),
                  request_id=f"issue-{os.environ['ISSUE_NUMBER']}")
           reply(f"Building **{repo}**{' @ ' + ref if ref else ''}{', folder ' + folder if folder else ''} "
-                f"for {firmwares or 'official, momentum, unleashed'}. "
+                f"for {fw_text}. "
                 f"You'll get the files here in a few minutes. Progress: {os.environ['RUN_URL']}")
           EOF
 
@@ -157,10 +161,14 @@ jobs:
           labels = {"official": "Official", "momentum": "Momentum", "unleashed": "Unleashed"}
           res = gh("release", "view", os.environ["TAG"], "--json", "assets", check=False)
           assets = json.loads(res.stdout)["assets"] if res.returncode == 0 else []
-          lines, built = [], set()
-          for a in sorted(assets, key=lambda a: a["name"]):
-              fw = next((f for f in labels if f"-{f}-" in a["name"]), "")
+          lines, built, app = [], set(), ""
+          order = list(labels)
+          def fw_of(name):
+              return next((f for f in labels if f"-{f}-" in name), "")
+          for a in sorted(assets, key=lambda a: (order.index(fw_of(a["name"])) if fw_of(a["name"]) else 9, a["name"])):
+              fw = fw_of(a["name"])
               built.add(fw)
+              app = app or (a["name"].split(f"-{fw}-")[0] if fw else "")
               lines.append(f"| {labels.get(fw, '?')} | [{a['name']}]({a['url']}) |")
           wanted = [f for f in os.environ["FIRMWARES"].split(",") if f]
           failed = [labels.get(f, f) for f in wanted if f not in built]
@@ -168,7 +176,7 @@ jobs:
           if lines:
               text = ["Your app is ready:", "", "| Firmware | File |", "|---|---|", *lines, "",
                       "Copy the file for your firmware to `apps/` on the SD card (with qFlipper or the Flipper app). "
-                      "You can rename it to just the app name, e.g. `my_app.fap`."]
+                      f"You can rename it to just `{app or 'the_app'}.fap`."]
               if failed:
                   text += ["", f"Didn't build for: {', '.join(failed)}. Details: {os.environ['RUN_URL']}"]
               text += ["", "Files are kept for 30 days."]

@@ -171,11 +171,12 @@ recent = lambda n: json.dumps([{"created_at": (now - datetime.timedelta(hours=h 
                                for h in range(n)])
 
 code, o, calls, err = run_script(accept, {"ISSUE_BODY": form(), "FAKE_ISSUES": recent(1)})
-check("issue form accepted", code == 0 and o.get("ok") == "true" and o.get("repo") == "https://github.com/owner/app")
+check("issue form accepted", code == 0 and o.get("ok") == "true" and o.get("repo") == "owner/app")
 check("empty fields become empty", o.get("ref") == "" and o.get("app_dir") == "" and o.get("versions") == "")
 check("firmwares normalised", o.get("firmwares") == "official,momentum,unleashed")
 check("request id from issue number", o.get("request_id") == "issue-42")
-check("starts with a reply", any(c["args"][:2] == ["issue", "comment"] and "Building" in c["stdin"] for c in calls))
+start = next((c["stdin"] for c in calls if c["args"][:2] == ["issue", "comment"]), "")
+check("starts with a reply", start.startswith("Building **owner/app**") and "for Official, Momentum, Unleashed." in start)
 check("issue stays open while building", not any(c["args"][:2] == ["issue", "close"] for c in calls))
 
 code, o, calls, _ = run_script(accept, {"ISSUE_BODY": form(repo="https://github.com/owner/app/tree/dev/apps/cfs",
@@ -204,6 +205,8 @@ code, o, calls, err = run_script(report, {"TAG": "build-issue-42", "FIRMWARES": 
                                           "FAKE_ASSETS": assets})
 reply = next((c["stdin"] for c in calls if c["args"][:2] == ["issue", "comment"]), "")
 check("report lists the files", code == 0 and "[my_app-official-latest.fap](https://dl/o)" in reply and "| Momentum |" in reply)
+check("report in firmware order", reply.index("| Official |") < reply.index("| Momentum |"))
+check("report names the plain file name", "`my_app.fap`" in reply)
 check("report names the firmware that failed", "Didn't build for: Unleashed" in reply)
 check("issue closed as completed", any(c["args"][:2] == ["issue", "close"] and "completed" in c["args"] for c in calls))
 code, o, calls, err = run_script(report, {"TAG": "build-issue-42", "FIRMWARES": "official"})
