@@ -10,7 +10,7 @@
 <meta name="theme-color" content="#202124" media="(prefers-color-scheme: dark)">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600&family=Pixelify+Sans:wght@400;600&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600&family=Pixelify+Sans:wght@400;500;600&display=swap" rel="stylesheet">
 <script>
   try {
     const t = JSON.parse(localStorage.getItem("dforge.theme") || '"auto"');
@@ -18,66 +18,93 @@
   } catch { /* storage unavailable: follow the system */ }
 </script>
 <style>
+  /* The whole page is one backlit Flipper screen in a shell. The screen keeps
+     its orange in light and dark mode; only the shell changes (white or black
+     Flipper). On the screen everything follows the device's UI: pixel type,
+     inverted selection, ◀ value ▶ pickers, an OK button for Build. */
   :root {
     --body: #e3e4e6;        /* white Flipper shell */
-    --field: #f4f4f5;
-    --ink: #17181b;
-    --muted: #63666d;
-    --line: #c7c9cd;
+    --bezel: #2b2c30;
+    --shell-ink: #17181b;
+    --shell-muted: #63666d;
+    --shell-line: #c7c9cd;
     --lcd: #ff8a1f;         /* backlit screen */
     --lcd-ink: #2a1500;
-    --lcd-dim: rgba(42, 21, 0, .38);
-    --bezel: #2b2c30;
-    --bad: #b8261f;
+    --lcd-dim: rgba(42, 21, 0, .78);   /* hints: still 5:1 on the backlight */
+    --lcd-faint: rgba(42, 21, 0, .4);  /* decoration only */
+    --lcd-field: rgba(255, 240, 222, .32);
     --pixel: "Pixelify Sans", ui-monospace, monospace;
     --sans: "Barlow", system-ui, -apple-system, "Segoe UI", sans-serif;
+    --chamfer: polygon(3px 0, calc(100% - 3px) 0, 100% 3px, 100% calc(100% - 3px), calc(100% - 3px) 100%, 3px 100%, 0 calc(100% - 3px), 0 3px);
+    --dots: repeating-linear-gradient(90deg, var(--lcd-ink) 0 2px, transparent 2px 6px);
   }
   @media (prefers-color-scheme: dark) {
     :root:not([data-theme="light"]) {
       --body: #202124;      /* black / transparent Flipper shell */
-      --field: #2b2c30;
-      --ink: #ececee;
-      --muted: #9a9ca3;
-      --line: #3d3f44;
       --bezel: #0d0d0f;
-      --bad: #ff7b72;
+      --shell-ink: #ececee;
+      --shell-muted: #9a9ca3;
+      --shell-line: #3d3f44;
     }
   }
   :root[data-theme="dark"] {
       --body: #202124;      /* black / transparent Flipper shell */
-      --field: #2b2c30;
-      --ink: #ececee;
-      --muted: #9a9ca3;
-      --line: #3d3f44;
       --bezel: #0d0d0f;
-      --bad: #ff7b72;
+      --shell-ink: #ececee;
+      --shell-muted: #9a9ca3;
+      --shell-line: #3d3f44;
   }
   * { box-sizing: border-box; }
   html { -webkit-text-size-adjust: 100%; }
   body {
-    margin: 0; background: var(--body); color: var(--ink);
+    margin: 0; background: var(--body); color: var(--shell-ink);
     font: 400 17px/1.5 var(--sans);
   }
-  main { max-width: 540px; margin: 0 auto; padding: 20px 16px 72px; }
+  main { max-width: 560px; margin: 0 auto; padding: 20px 16px 40px; }
   a { color: inherit; text-underline-offset: 3px; }
   :focus-visible { outline: 3px solid var(--lcd); outline-offset: 2px; }
   [hidden] { display: none !important; }
 
+  /* ---------- the shell ---------- */
+  .device { background: var(--bezel); border-radius: 26px; padding: 12px 14px 14px; }
+  .device-head { display: flex; align-items: center; gap: 10px; padding: 2px 6px 12px; color: #9a9ca3; font-size: 14px; }
+  .theme-btn {
+    margin-left: auto; display: inline-flex; align-items: center; gap: 6px; flex: none;
+    border: 2px solid #4a4b50; color: #c3c5ca; background: transparent; font: 500 13px/1 var(--sans);
+    padding: 6px 12px; border-radius: 999px; cursor: pointer;
+  }
+  .theme-btn svg { width: 14px; height: 14px; }
+  /* status LED, like the Flipper's RGB LED */
+  .led { width: 10px; height: 10px; border-radius: 50%; background: #4a4b50; flex: none; }
+  .led[data-led="ready"] { background: #3ddc6a; box-shadow: 0 0 8px #3ddc6a; }
+  .led[data-led="busy"] { background: #3a8bff; box-shadow: 0 0 8px #3a8bff; animation: blink 1s steps(2, jump-none) infinite; }
+  .led[data-led="error"] { background: #ff4b3e; box-shadow: 0 0 8px #ff4b3e; animation: blink 1.4s steps(2, jump-none) infinite; }
+  .led[data-led="fail"] { background: #ff4b3e; box-shadow: 0 0 8px #ff4b3e; }
+  @keyframes blink { 50% { opacity: .2; box-shadow: none; } }
+  @media (prefers-reduced-motion: reduce) { .led { animation: none !important; } }
+  .foot { margin-top: 22px; padding: 0 8px; color: var(--shell-muted); font-size: 15px; }
+
   /* ---------- the screen ---------- */
-  .device { background: var(--bezel); border-radius: 22px; padding: 14px; margin-bottom: 28px; }
-  .lcd {
-    position: relative; min-height: 200px; border-radius: 8px; padding: 16px 18px;
-    background-color: var(--lcd); color: var(--lcd-ink); font-family: var(--pixel);
+  .screen {
+    border-radius: 8px; padding: 16px 18px 22px;
+    background-color: var(--lcd); color: var(--lcd-ink);
+    font: 400 17px/1.45 var(--pixel);
     background-image:
       repeating-linear-gradient(0deg, rgba(0,0,0,.045) 0 1px, transparent 1px 4px),
       repeating-linear-gradient(90deg, rgba(0,0,0,.045) 0 1px, transparent 1px 4px);
     box-shadow: inset 0 0 0 1px rgba(0,0,0,.25), inset 0 6px 18px rgba(0,0,0,.12);
-    overflow: hidden;
   }
+  .screen :focus-visible { outline: 2px solid var(--lcd-ink); outline-offset: 2px; }
+  .screen ::selection { background: var(--lcd-ink); color: var(--lcd); }
+  .rule { height: 2px; background: var(--dots); margin: 22px 0; border: 0; }
+
+  /* status area at the top of the screen */
+  .lcd { min-height: 150px; }
   .lcd-top { display: flex; align-items: center; gap: 10px; font-size: 15px; }
   .lcd-top svg { width: 32px; height: 14px; flex: none; }
   .lcd-top .spacer { flex: 1; }
   .lcd-top .clock { color: var(--lcd-dim); }
+  .lcd-top .batt { width: 22px; height: 10px; }
   .lcd h1 { font: 600 44px/1 var(--pixel); margin: 26px 0 10px; letter-spacing: .5px; }
   .lcd .idle-line { font-size: 17px; margin: 0; }
   .lcd .build-title {
@@ -92,176 +119,215 @@
   @keyframes dots { 0% { content: ""; } 25% { content: "."; } 50% { content: ".."; } 75% { content: "..."; } }
   .lcd .summary { margin: 10px 0 0; font-size: 17px; }
   .lcd .keep-open { margin: 12px 0 0; font-size: 15px; display: flex; align-items: center; gap: 8px; }
-  .lcd .keep-open::before { content: "!"; display: inline-grid; place-items: center; width: 18px; height: 18px; background: var(--lcd-ink); color: var(--lcd); font-weight: 600; }
+  .keep-open::before, .note.warn::before {
+    content: "!"; display: inline-grid; place-items: center; width: 18px; height: 18px; flex: none;
+    background: var(--lcd-ink); color: var(--lcd); font-weight: 600;
+  }
   @media (prefers-reduced-motion: reduce) { .lcd-row[data-state="run"] .st::after { animation: none; content: "..."; } }
 
-  /* status LED on the shell, like the Flipper's RGB LED */
-  .device-foot { display: flex; align-items: center; gap: 10px; padding: 12px 6px 0; color: #9a9ca3; font-size: 14px; }
-  .theme-btn {
-    margin-left: auto; display: inline-flex; align-items: center; gap: 6px;
-    border: 2px solid #4a4b50; color: #c3c5ca; background: transparent;
-    padding: 5px 12px; font-size: 13px; font-weight: 500; border-radius: 999px;
-  }
-  .theme-btn svg { width: 14px; height: 14px; }
-  .led { width: 10px; height: 10px; border-radius: 50%; background: #4a4b50; flex: none; }
-  .led[data-led="ready"] { background: #3ddc6a; box-shadow: 0 0 8px #3ddc6a; }
-  .led[data-led="busy"] { background: #3a8bff; box-shadow: 0 0 8px #3a8bff; animation: blink 1s steps(2, jump-none) infinite; }
-  .led[data-led="error"] { background: #ff4b3e; box-shadow: 0 0 8px #ff4b3e; animation: blink 1.4s steps(2, jump-none) infinite; }
-  .led[data-led="fail"] { background: #ff4b3e; box-shadow: 0 0 8px #ff4b3e; }
-  @keyframes blink { 50% { opacity: .2; box-shadow: none; } }
-  @media (prefers-reduced-motion: reduce) { .led { animation: none !important; } }
-
-  /* ---------- results under the screen ---------- */
-  .results { margin: -10px 0 32px; display: grid; gap: 10px; }
+  /* results: downloads and errors */
+  .results { margin-top: 18px; display: grid; gap: 10px; }
+  .results .results { margin-top: 0; }
   .file {
-    display: flex; align-items: center; justify-content: space-between; gap: 12px;
-    padding: 14px 16px; border-radius: 12px; background: var(--ink); color: var(--body);
-    text-decoration: none; font-weight: 500;
+    display: flex; align-items: center; justify-content: space-between; gap: 12px; cursor: pointer;
+    padding: 12px 12px 12px 16px; background: var(--lcd-ink); color: var(--lcd);
+    text-decoration: none; clip-path: var(--chamfer);
   }
-  .file { cursor: pointer; }
   .file span { overflow-wrap: anywhere; flex: 1; }
-  .file small { font-size: 14px; opacity: .7; white-space: nowrap; }
+  .file small { font-size: 14px; opacity: .8; white-space: nowrap; }
   .file .dl {
-    flex: none; width: 38px; height: 38px; display: grid; place-items: center;
-    background: var(--lcd); color: var(--lcd-ink); border-radius: 8px;
+    flex: none; width: 36px; height: 36px; display: grid; place-items: center;
+    background: var(--lcd); color: var(--lcd-ink); clip-path: var(--chamfer);
   }
   .file .dl svg { width: 18px; height: 18px; }
+  .file:focus-visible { outline: none; box-shadow: inset 0 0 0 3px var(--lcd); }
   .file[data-state="loading"] .dl svg { animation: nudge .8s steps(2, jump-none) infinite; }
-  .file[data-state="done"] .dl { background: #3ddc6a; }
+  .file[data-state="done"] .dl { background: transparent; color: var(--lcd); box-shadow: inset 0 0 0 2px var(--lcd); }
   @keyframes nudge { 50% { transform: translateY(3px); } }
   @media (prefers-reduced-motion: reduce) { .file .dl svg { animation: none !important; } }
-  .error { border-left: 4px solid var(--bad); padding: 4px 0 4px 14px; }
-  .error b { display: block; }
-  .error pre { margin: 4px 0; white-space: pre-wrap; font: 14px/1.45 ui-monospace, Menlo, monospace; color: var(--bad); }
-  .note { margin: 0; color: var(--muted); font-size: 15px; }
-  .note.warn { color: var(--bad); }
+  .error { border-left: 4px solid var(--lcd-ink); padding: 2px 0 2px 14px; }
+  .error b { display: inline-block; background: var(--lcd-ink); color: var(--lcd); padding: 0 6px; font-weight: 600; }
+  .error pre { margin: 6px 0; white-space: pre-wrap; font: 14px/1.45 ui-monospace, Menlo, monospace; }
   .error .links { display: flex; flex-wrap: wrap; gap: 6px 18px; }
-  .foot { margin-top: 48px; padding-top: 16px; border-top: 1px solid var(--line); color: var(--muted); font-size: 15px; }
+  .note { margin: 0; color: var(--lcd-dim); font-size: 16px; }
+  .note.warn { color: var(--lcd-ink); display: flex; align-items: flex-start; gap: 8px; }
 
   /* ---------- form ---------- */
-  h2 { font: 600 20px/1.3 var(--sans); margin: 0 0 14px; }
-  label { display: block; font-weight: 500; font-size: 15px; margin: 18px 0 6px; }
-  form > label:first-of-type { margin-top: 0; }
+  h2 { font: 600 20px/1.3 var(--pixel); margin: 0 0 12px; }
+  label { display: block; font-weight: 500; font-size: 17px; margin: 18px 0 6px; }
   input[type=text], input[type=password], select {
-    width: 100%; font: inherit; font-size: 17px; color: var(--ink); background: var(--field);
-    border: 2px solid var(--line); border-radius: 10px; padding: 11px 13px; outline: none;
-    -webkit-appearance: none; appearance: none;
+    width: 100%; font: 400 17px/1.3 var(--pixel); color: var(--lcd-ink); background-color: var(--lcd-field);
+    border: 2px solid var(--lcd-ink); border-radius: 4px; padding: 10px 12px; outline: none;
+    -webkit-appearance: none; appearance: none; caret-color: currentColor;
   }
-  select {
-    background-image: linear-gradient(45deg, transparent 50%, currentColor 50%), linear-gradient(135deg, currentColor 50%, transparent 50%);
-    background-position: calc(100% - 18px) 52%, calc(100% - 13px) 52%;
-    background-size: 5px 5px; background-repeat: no-repeat; padding-right: 34px;
-  }
-  input:focus, select:focus { border-color: var(--ink); }
-  select:disabled { opacity: .45; }
+  input::placeholder { color: var(--lcd-dim); opacity: 1; }
+  /* the field being edited is "selected", so it inverts like a Flipper menu row */
+  input[type=text]:focus, input[type=password]:focus, select:focus { background-color: var(--lcd-ink); color: var(--lcd); }
+  input:focus::placeholder { color: rgba(255, 138, 31, .7); }
+  .hint { color: var(--lcd-dim); font-size: 16px; margin: 8px 0 0; }
   .pair { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
-  .hint { color: var(--muted); font-size: 14px; margin: 8px 0 0; }
 
-  .fw-list { display: grid; gap: 8px; }
-  .fw-row { display: grid; grid-template-columns: 150px 1fr; gap: 10px; align-items: center; }
+  /* firmware rows read like a Flipper settings list: [x] Name   ◀ value ▶ */
+  .fw-list { display: grid; }
+  .fw-row {
+    display: grid; grid-template-columns: 150px 1fr; gap: 10px; align-items: center;
+    padding: 6px 0; background-image: var(--dots); background-size: 100% 2px; background-repeat: no-repeat; background-position: bottom;
+  }
+  .fw-row:has(.chip input:not(:checked)) .fw-ver { opacity: .45; }
   .chip { position: relative; margin: 0; font-size: 17px; }
   .chip input { position: absolute; opacity: 0; inset: 0; margin: 0; cursor: pointer; }
-  .chip span {
-    display: flex; align-items: center; gap: 10px; padding: 11px 12px;
-    border: 2px solid var(--line); border-radius: 10px; user-select: none;
+  .chip span { display: flex; align-items: center; gap: 10px; padding: 8px 6px; user-select: none; }
+  .chip span::before { content: ""; width: 14px; height: 14px; border: 2px solid var(--lcd-ink); flex: none; }
+  .chip input:checked + span::before { background: var(--lcd-ink); box-shadow: inset 0 0 0 2px var(--lcd); }
+  .chip input:focus-visible + span { outline: 2px solid var(--lcd-ink); outline-offset: 0; }
+  select {
+    cursor: pointer; padding: 9px 28px 9px 26px; border-color: transparent; text-align: center; text-align-last: center;
+    background-image:
+      url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 4 7' shape-rendering='crispEdges'%3E%3Cpath fill='%232a1500' d='M3 0h1v7H3zM2 1h1v5H2zM1 2h1v3H1zM0 3h1v1H0z'/%3E%3C/svg%3E"),
+      url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 4 7' shape-rendering='crispEdges'%3E%3Cpath fill='%232a1500' d='M0 0h1v7H0zM1 1h1v5H1zM2 2h1v3H2zM3 3h1v1H3z'/%3E%3C/svg%3E");
+    background-position: 10px 50%, calc(100% - 10px) 50%;
+    background-size: 6px 10px; background-repeat: no-repeat;
   }
-  .chip span::before {
-    content: ""; width: 14px; height: 14px; border: 2px solid var(--muted); border-radius: 3px; flex: none;
+  select:focus {
+    background-image:
+      url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 4 7' shape-rendering='crispEdges'%3E%3Cpath fill='%23ff8a1f' d='M3 0h1v7H3zM2 1h1v5H2zM1 2h1v3H1zM0 3h1v1H0z'/%3E%3C/svg%3E"),
+      url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 4 7' shape-rendering='crispEdges'%3E%3Cpath fill='%23ff8a1f' d='M0 0h1v7H0zM1 1h1v5H1zM2 2h1v3H2zM3 3h1v1H3z'/%3E%3C/svg%3E");
   }
-  .chip input:checked + span { border-color: var(--ink); }
-  .chip input:checked + span::before { background: var(--lcd); border-color: var(--ink); }
-  .chip input:focus-visible + span { outline: 3px solid var(--lcd); outline-offset: 2px; }
+  select option { background: #fff; color: #17181b; font-family: var(--sans); }
+  select:disabled { opacity: .45; cursor: default; }
+  #channel { text-align: left; text-align-last: left; }
 
+  /* buttons on the screen */
   button {
-    font: 600 17px/1 var(--sans); cursor: pointer; border-radius: 999px;
-    border: 2px solid var(--ink); background: transparent; color: var(--ink); padding: 12px 22px;
+    font: 600 16px/1 var(--pixel); cursor: pointer; border-radius: 4px;
+    border: 2px solid var(--lcd-ink); background: transparent; color: var(--lcd-ink); padding: 10px 18px;
   }
-  button.primary { width: 100%; padding: 17px; background: var(--ink); color: var(--body); }
+  .screen button:not(.primary):hover { background: var(--lcd-ink); color: var(--lcd); }
+  button:disabled { opacity: .5; cursor: default; }
+  /* Build is the Flipper's OK button */
+  button.primary {
+    width: 100%; padding: 16px; border: 0; border-radius: 0; clip-path: var(--chamfer);
+    background: var(--lcd-ink); color: var(--lcd); font-size: 20px;
+    display: flex; align-items: center; justify-content: center; gap: 12px;
+  }
+  button.primary::before {
+    content: ""; width: 18px; height: 18px; border-radius: 50%; flex: none;
+    border: 2px solid currentColor; background: radial-gradient(currentColor 0 3px, transparent 3.5px);
+  }
+  button.primary:focus-visible { outline: none; box-shadow: inset 0 0 0 3px var(--lcd); }
+
+  /* GitHub / upload switch, like Flipper's tabbed screens */
+  .source { display: grid; grid-template-columns: 1fr 1fr; border: 2px solid var(--lcd-ink); border-radius: 6px; padding: 3px; gap: 3px; }
+  .source button { border: 0; border-radius: 3px; padding: 10px; font-size: 17px; }
+  .source button[aria-pressed="true"] { background: var(--lcd-ink); color: var(--lcd); }
 
   /* repo field with paste / clear */
   .field { position: relative; }
-  .field input { padding-right: 118px; }
-  .field-btns { position: absolute; right: 6px; top: 50%; transform: translateY(-50%); display: flex; gap: 6px; }
-  .field-btns button { padding: 7px 13px; font-size: 14px; }
-  .field-btns .clear { width: 34px; padding: 7px 0; }
+  .field input { padding-right: 84px; }
+  .field:has(.clear:not([hidden])) input { padding-right: 124px; }
+  .field-btns { position: absolute; right: 7px; top: 50%; transform: translateY(-50%); display: flex; gap: 6px; }
+  .field-btns button { padding: 6px 11px; font-size: 14px; border-radius: 3px; }
+  .field-btns .clear { width: 32px; padding: 6px 0; }
+  .field:focus-within .field-btns button { color: var(--lcd); border-color: var(--lcd); }
+
+  .drop { border: 2px dashed var(--lcd-ink); border-radius: 6px; padding: 20px 16px; text-align: center; margin-top: 18px; }
+  .drop.over { background: var(--lcd-field); border-style: solid; }
+  .drop p { margin: 0 0 12px; color: var(--lcd-dim); font-size: 15px; }
+  .drop .picks { display: flex; flex-wrap: wrap; gap: 10px; justify-content: center; }
+  .pick { position: relative; display: inline-block; border: 2px solid var(--lcd-ink); border-radius: 4px; padding: 10px 16px; font-weight: 600; font-size: 16px; cursor: pointer; margin: 0; }
+  .pick:hover { background: var(--lcd-ink); color: var(--lcd); }
+  .pick input { position: absolute; inset: 0; opacity: 0; cursor: pointer; width: 100%; }
+  .pick:focus-within { outline: 2px solid var(--lcd-ink); outline-offset: 2px; }
+  .up-summary { margin-top: 12px; font-weight: 500; }
+
+  .fw-label { margin-top: 26px; }
+
+  /* app list, drawn as a Flipper submenu */
+  .dir-toggle { margin-top: 12px; padding: 8px 14px; font-size: 15px; }
+  .dir-toggle::after { content: ""; display: inline-block; margin-left: 8px; border: 5px solid transparent; border-left: 6px solid currentColor; border-right: 0; vertical-align: -1px; }
+  .dir-toggle[aria-expanded="true"]::after { border: 5px solid transparent; border-top: 6px solid currentColor; border-bottom: 0; vertical-align: 1px; }
+  .dir { margin-top: 12px; border: 2px solid var(--lcd-ink); border-radius: 6px; padding: 12px; }
+  .dir-items {
+    margin-top: 10px; display: grid; gap: 2px; max-height: 320px; overflow-y: auto; padding-right: 6px;
+    scrollbar-width: thin; scrollbar-color: var(--lcd-ink) transparent;
+  }
+  .dir-items::-webkit-scrollbar { width: 6px; }
+  .dir-items::-webkit-scrollbar-track { background: repeating-linear-gradient(180deg, var(--lcd-ink) 0 2px, transparent 2px 6px) center / 2px 100% no-repeat; }
+  .dir-items::-webkit-scrollbar-thumb { background: var(--lcd-ink); }
+  .screen .dir-app {
+    display: flex; align-items: center; gap: 12px; width: 100%; text-align: left;
+    border: 0; border-radius: 4px; padding: 9px 10px; background: transparent; cursor: pointer; font-weight: 400;
+  }
+  .screen .dir-app:hover, .screen .dir-app:focus-visible { background: var(--lcd-ink); color: var(--lcd); outline: none; }
+  .dir-app .ico { font-size: 20px; flex: none; line-height: 1; filter: grayscale(1) contrast(1.3); }
+  .dir-app .meta { min-width: 0; }
+  .dir-app .meta b { display: block; font-size: 16px; font-weight: 600; }
+  .dir-app .meta small { font-size: 15px; display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; opacity: .85; }
+  .dir-empty { color: var(--lcd-dim); font-size: 15px; padding: 6px 2px; }
 
   /* rarely-changed options */
+  details summary { cursor: pointer; font-weight: 600; font-size: 20px; list-style: none; }
+  details summary::-webkit-details-marker { display: none; }
+  details summary::before {
+    content: ""; display: inline-block; margin-right: 10px; vertical-align: 2px;
+    border: 6px solid transparent; border-left: 7px solid currentColor; border-right: 0;
+  }
+  details[open] summary::before { border: 6px solid transparent; border-top: 7px solid currentColor; border-bottom: 0; vertical-align: 4px; margin-right: 8px; }
+  details[open] summary { margin-bottom: 4px; }
   .more { margin-top: 20px; }
-  .more > summary { font-size: 16px; }
-  .more-sum { color: var(--muted); font-weight: 400; font-size: 14px; margin-left: 6px; }
+  .more > summary { font-size: 17px; }
+  .more-sum { color: var(--lcd-dim); font-weight: 400; font-size: 16px; margin-left: 6px; }
   .more .pair label, .more > label { margin-top: 14px; }
 
   /* Build stays under the thumb */
   .build-bar {
-    position: sticky; bottom: 0; z-index: 5; margin-top: 20px;
+    position: sticky; bottom: 0; z-index: 5; margin-top: 18px;
     padding: 14px 0 calc(14px + env(safe-area-inset-bottom));
-    background: linear-gradient(to top, var(--body) 75%, transparent);
+    /* solid backlight behind the button, with the same pixel grid as the screen */
+    background:
+      repeating-linear-gradient(0deg, rgba(0,0,0,.045) 0 1px, transparent 1px 4px) bottom / 100% 75% no-repeat,
+      repeating-linear-gradient(90deg, rgba(0,0,0,.045) 0 1px, transparent 1px 4px) bottom / 100% 75% no-repeat,
+      linear-gradient(to top, var(--lcd) 75%, rgba(255, 138, 31, 0));
   }
   .build-bar #formMsg { margin: 10px 0 0; }
-  button:disabled { opacity: .5; cursor: default; }
-  #formMsg { margin-top: 12px; }
-
-  .source { display: grid; grid-template-columns: 1fr 1fr; border: 2px solid var(--ink); border-radius: 999px; padding: 3px; margin-bottom: 22px; }
-  .source button { border: 0; padding: 10px; font-size: 16px; }
-  .source button[aria-pressed="true"] { background: var(--ink); color: var(--body); }
-  .drop {
-    border: 2px dashed var(--line); border-radius: 12px; padding: 20px 16px; text-align: center;
-  }
-  .drop.over { border-color: var(--ink); }
-  .drop p { margin: 0 0 12px; color: var(--muted); font-size: 15px; }
-  .drop .picks { display: flex; flex-wrap: wrap; gap: 10px; justify-content: center; }
-  .pick { position: relative; display: inline-block; border: 2px solid var(--ink); border-radius: 999px; padding: 10px 18px; font-weight: 600; font-size: 16px; cursor: pointer; margin: 0; }
-  .pick input { position: absolute; inset: 0; opacity: 0; cursor: pointer; width: 100%; }
-  .pick:focus-within { outline: 3px solid var(--lcd); outline-offset: 2px; }
-  .up-summary { margin-top: 12px; font-weight: 500; }
-
-  .fw-label { margin-top: 24px; }
-  .dir-toggle { margin-top: 12px; padding: 8px 16px; font-size: 15px; }
-  .dir-toggle[aria-expanded="true"]::after { content: " ▾"; }
-  .dir-toggle[aria-expanded="false"]::after { content: " ▸"; }
-  .dir { margin-top: 14px; border: 2px solid var(--line); border-radius: 12px; padding: 12px; }
-  .dir-items { margin-top: 10px; display: grid; gap: 8px; max-height: 320px; overflow-y: auto; }
-  .dir-app {
-    display: flex; align-items: center; gap: 12px; width: 100%; text-align: left;
-    border: 2px solid var(--line); border-radius: 10px; padding: 10px 12px; background: var(--field); cursor: pointer;
-  }
-  .dir-app:hover, .dir-app:focus-visible { border-color: var(--ink); }
-  .dir-app .ico { font-size: 22px; flex: none; line-height: 1; }
-  .dir-app .meta { min-width: 0; }
-  .dir-app .meta b { display: block; font-size: 16px; }
-  .dir-app .meta small { color: var(--muted); font-size: 13px; display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .dir-empty { color: var(--muted); font-size: 15px; padding: 6px 2px; }
 
   /* ---------- lower sections ---------- */
-  .section { margin-top: 44px; }
-  .history-item { padding: 12px 0; border-top: 1px solid var(--line); }
-  .history-item:first-child { border-top: 0; }
+  .history-item { padding: 12px 0; background-image: var(--dots); background-size: 100% 2px; background-repeat: no-repeat; }
+  .history-item:first-child { background-image: none; }
   .h-top { display: flex; justify-content: space-between; gap: 12px; }
-  .history-item .when { color: var(--muted); font-size: 14px; white-space: nowrap; }
+  .history-item .when { color: var(--lcd-dim); font-size: 15px; white-space: nowrap; }
   .h-files { display: grid; gap: 6px; margin-top: 8px; }
-  .file.mini { padding: 8px 10px; font-size: 14px; border-radius: 10px; }
-  .file.mini .dl { width: 30px; height: 30px; }
+  .file.mini { padding: 7px 8px 7px 12px; font-size: 14px; }
+  .file.mini .dl { width: 28px; height: 28px; }
   .file.mini small { font-size: 12px; }
-  .again { margin-top: 8px; padding: 7px 14px; font-size: 14px; }
-  details summary { cursor: pointer; font-weight: 600; font-size: 20px; list-style: none; }
-  details summary::-webkit-details-marker { display: none; }
-  details summary::after { content: " +"; color: var(--muted); }
-  details[open] summary::after { content: " −"; }
-  details[open] summary { margin-bottom: 4px; }
+  .again { margin-top: 8px; padding: 7px 12px; font-size: 14px; }
   .save-row { display: flex; align-items: center; gap: 14px; margin-top: 16px; }
-  #settingsState { color: var(--muted); font-size: 15px; }
+  #settingsState { color: var(--lcd-dim); font-size: 15px; }
 
   @media (max-width: 460px) {
+    main { padding-top: 12px; }
+    .device { padding: 10px 8px 8px; border-radius: 22px; }
+    .screen { padding: 14px 14px 18px; }
     .lcd h1 { font-size: 36px; }
     .pair { grid-template-columns: 1fr; gap: 0; }
     .fw-row { grid-template-columns: minmax(0, .85fr) minmax(0, 1.15fr); gap: 8px; }
-    .fw-row select { font-size: 15px; padding-left: 10px; }
+    .fw-row select { font-size: 15px; }
   }
 </style>
 </head>
 <body>
 <main>
   <div class="device">
+    <div class="device-head">
+      <span class="led" id="led" data-led="off" role="img" aria-label="Status"></span>
+      <span id="ledText">Checking…</span>
+      <button type="button" class="theme-btn" id="themeBtn" aria-label="Theme">
+        <svg id="themeIcon" viewBox="0 0 7 7" shape-rendering="crispEdges" fill="currentColor" aria-hidden="true"></svg>
+        <span id="themeLabel">Auto</span>
+      </button>
+    </div>
+
+    <div class="screen">
     <div class="lcd" id="lcd" aria-live="polite">
       <div class="lcd-top">
         <svg viewBox="0 0 16 7" shape-rendering="crispEdges" aria-hidden="true" fill="currentColor">
@@ -273,6 +339,9 @@
         <span id="lcdTopName" hidden>DolphinForge</span>
         <span class="spacer"></span>
         <span class="clock" id="lcdClock"></span>
+        <svg class="batt" viewBox="0 0 11 5" shape-rendering="crispEdges" aria-hidden="true" fill="currentColor">
+          <path d="M0 0h10v1H0zM0 4h10v1H0zM0 1h1v3H0zM9 1h1v3H9zM10 2h1v1h-1zM2 2h6v1H2z"/>
+        </svg>
       </div>
       <div id="lcdIdle">
         <h1>DolphinForge</h1>
@@ -285,109 +354,103 @@
         <p class="keep-open" id="lcdNote" hidden>Keep this page open until it's done</p>
       </div>
     </div>
-    <div class="device-foot">
-      <span class="led" id="led" data-led="off" role="img" aria-label="Status"></span>
-      <span id="ledText">Checking…</span>
-      <button type="button" class="theme-btn" id="themeBtn" aria-label="Theme">
-        <svg id="themeIcon" viewBox="0 0 7 7" shape-rendering="crispEdges" fill="currentColor" aria-hidden="true"></svg>
-        <span id="themeLabel">Auto</span>
-      </button>
-    </div>
-  </div>
 
-  <div class="results" id="statusBox" hidden>
-    <div id="files" class="results"></div>
-    <div id="errors"></div>
-    <p class="note" id="statusMsg" hidden></p>
-    <p class="note" id="runLink" hidden></p>
-  </div>
-
-  <form id="buildForm" autocomplete="off">
-    <div class="source" role="group" aria-label="Where the app comes from">
-      <button type="button" id="srcGithubBtn" aria-pressed="true">From GitHub</button>
-      <button type="button" id="srcUploadBtn" aria-pressed="false">Upload files</button>
+    <div class="results" id="statusBox" hidden>
+      <div id="files" class="results"></div>
+      <div id="errors"></div>
+      <p class="note" id="statusMsg" hidden></p>
+      <p class="note" id="runLink" hidden></p>
     </div>
 
-    <div id="srcUpload" hidden>
-      <div class="drop" id="drop">
-        <p>Drop a .zip with the app here, or choose it below. On a computer you can pick the whole folder.</p>
-        <div class="picks">
-          <label class="pick">Choose .zip or files<input type="file" id="upFiles" multiple></label>
-          <label class="pick" id="pickFolder">Choose folder<input type="file" id="upFolder" webkitdirectory multiple></label>
+    <hr class="rule">
+
+    <form id="buildForm" autocomplete="off">
+      <div class="source" role="group" aria-label="Where the app comes from">
+        <button type="button" id="srcGithubBtn" aria-pressed="true">From GitHub</button>
+        <button type="button" id="srcUploadBtn" aria-pressed="false">Upload files</button>
+      </div>
+
+      <div id="srcUpload" hidden>
+        <div class="drop" id="drop">
+          <p>Drop a .zip with the app here, or choose it below. On a computer you can pick the whole folder.</p>
+          <div class="picks">
+            <label class="pick">Choose .zip or files<input type="file" id="upFiles" multiple></label>
+            <label class="pick" id="pickFolder">Choose folder<input type="file" id="upFolder" webkitdirectory multiple></label>
+          </div>
+        </div>
+        <p class="up-summary" id="upSummary" hidden></p>
+        <p class="hint" id="upHint">Needs application.fam inside. Up to 20 MB and 800 files.</p>
+      </div>
+
+      <div id="srcGithub">
+      <label for="repo">App on GitHub</label>
+      <div class="field">
+        <input type="text" id="repo" placeholder="github.com/owner/app" required spellcheck="false" autocapitalize="off" inputmode="url">
+        <div class="field-btns">
+          <button type="button" class="clear" id="clearBtn" aria-label="Clear" hidden>✕</button>
+          <button type="button" id="pasteBtn">Paste</button>
         </div>
       </div>
-      <p class="up-summary" id="upSummary" hidden></p>
-      <p class="hint" id="upHint">Needs application.fam inside. Up to 20 MB and 800 files.</p>
-    </div>
+      <p class="hint" id="repoHint" hidden></p>
+      <button type="button" id="dirToggle" class="dir-toggle" aria-expanded="false">Browse apps</button>
+      <div id="dirPanel" class="dir" hidden>
+        <input type="text" id="dirSearch" placeholder="Search apps" spellcheck="false" autocapitalize="off" aria-label="Search apps">
+        <div id="dirItems" class="dir-items"></div>
+        <p class="hint">A short starter list. Paste any repo above to build something that isn't here.</p>
+      </div>
+      </div>
 
-    <div id="srcGithub">
-    <label for="repo">App on GitHub</label>
-    <div class="field">
-      <input type="text" id="repo" placeholder="github.com/owner/app" required spellcheck="false" autocapitalize="off" inputmode="url">
-      <div class="field-btns">
-        <button type="button" class="clear" id="clearBtn" aria-label="Clear" hidden>✕</button>
-        <button type="button" id="pasteBtn">Paste</button>
-      </div>
-    </div>
-    <p class="hint" id="repoHint" hidden></p>
-    <button type="button" id="dirToggle" class="dir-toggle" aria-expanded="false">Browse apps</button>
-    <div id="dirPanel" class="dir" hidden>
-      <input type="text" id="dirSearch" placeholder="Search apps" spellcheck="false" autocapitalize="off" aria-label="Search apps">
-      <div id="dirItems" class="dir-items"></div>
-      <p class="hint">A short starter list. Paste any repo above to build something that isn't here.</p>
-    </div>
-    </div>
-
-    <label class="fw-label">Firmware and version</label>
-    <div class="fw-list" id="fwChips">
-      <div class="fw-row">
-        <label class="chip"><input type="checkbox" value="official" checked><span>Official</span></label>
-        <select class="fw-ver" data-fw="official" aria-label="Official version"><option value="">Latest</option></select>
-      </div>
-      <div class="fw-row">
-        <label class="chip"><input type="checkbox" value="momentum" checked><span>Momentum</span></label>
-        <select class="fw-ver" data-fw="momentum" aria-label="Momentum version"><option value="">Latest</option></select>
-      </div>
-      <div class="fw-row">
-        <label class="chip"><input type="checkbox" value="unleashed" checked><span>Unleashed</span></label>
-        <select class="fw-ver" data-fw="unleashed" aria-label="Unleashed version"><option value="">Latest</option></select>
-      </div>
-    </div>
-    <p class="hint" id="verHint">Versions are listed from each firmware's official releases. Pick the one your Flipper runs.</p>
-
-    <details class="more" id="moreOpts">
-      <summary>More options<span class="more-sum" id="moreSum"></span></summary>
-      <div class="pair" id="ghOpts">
-        <div>
-          <label for="ref">Branch or tag</label>
-          <input type="text" id="ref" placeholder="Default branch" list="refList" spellcheck="false" autocapitalize="off">
-          <datalist id="refList"></datalist>
+      <label class="fw-label">Firmware and version</label>
+      <div class="fw-list" id="fwChips">
+        <div class="fw-row">
+          <label class="chip"><input type="checkbox" value="official" checked><span>Official</span></label>
+          <select class="fw-ver" data-fw="official" aria-label="Official version"><option value="">Latest</option></select>
         </div>
-        <div>
-          <label for="appDir">App folder</label>
-          <input type="text" id="appDir" placeholder="Repo root (top folder)" list="dirList" spellcheck="false" autocapitalize="off">
-          <datalist id="dirList"></datalist>
+        <div class="fw-row">
+          <label class="chip"><input type="checkbox" value="momentum" checked><span>Momentum</span></label>
+          <select class="fw-ver" data-fw="momentum" aria-label="Momentum version"><option value="">Latest</option></select>
+        </div>
+        <div class="fw-row">
+          <label class="chip"><input type="checkbox" value="unleashed" checked><span>Unleashed</span></label>
+          <select class="fw-ver" data-fw="unleashed" aria-label="Unleashed version"><option value="">Latest</option></select>
         </div>
       </div>
-      <label for="channel">SDK</label>
-      <select id="channel">
-        <option value="release">Stable releases</option>
-        <option value="dev">Development build</option>
-      </select>
-    </details>
+      <p class="hint" id="verHint">Versions are listed from each firmware's official releases. Pick the one your Flipper runs.</p>
 
-    <div class="build-bar">
-      <button class="primary" id="buildBtn" type="submit">Build</button>
-      <p class="note warn" id="formMsg" hidden></p>
-    </div>
-  </form>
+      <details class="more" id="moreOpts">
+        <summary>More options<span class="more-sum" id="moreSum"></span></summary>
+        <div class="pair" id="ghOpts">
+          <div>
+            <label for="ref">Branch or tag</label>
+            <input type="text" id="ref" placeholder="Default branch" list="refList" spellcheck="false" autocapitalize="off">
+            <datalist id="refList"></datalist>
+          </div>
+          <div>
+            <label for="appDir">App folder</label>
+            <input type="text" id="appDir" placeholder="Repo root (top folder)" list="dirList" spellcheck="false" autocapitalize="off">
+            <datalist id="dirList"></datalist>
+          </div>
+        </div>
+        <label for="channel">SDK</label>
+        <select id="channel">
+          <option value="release">Stable releases</option>
+          <option value="dev">Development build</option>
+        </select>
+      </details>
 
-  <section class="section" id="historyBox" hidden>
-    <h2>Recent builds</h2>
-    <div id="history"></div>
-  </section>
+      <div class="build-bar">
+        <button class="primary" id="buildBtn" type="submit">Build</button>
+        <p class="note warn" id="formMsg" hidden></p>
+      </div>
+    </form>
 
-  <section class="section">
+    <section id="historyBox" hidden>
+      <hr class="rule">
+      <h2>Recent builds</h2>
+      <div id="history"></div>
+    </section>
+
+    <hr class="rule">
     <details id="setupDetails">
       <summary>Repo and token</summary>
       <label for="builderRepo">Your DolphinForge repo</label>
@@ -400,7 +463,9 @@
         <span id="settingsState"></span>
       </div>
     </details>
-  </section>
+    </div>
+  </div>
+
   <footer class="foot">
     Something off, or an idea? <a id="feedbackLink" href="https://github.com/BaniMun/DolphinForge/issues/new?template=feedback.yml" target="_blank" rel="noopener">Send feedback</a>
   </footer>

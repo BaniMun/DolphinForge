@@ -199,7 +199,8 @@ with sync_playwright() as p:
     page.fill("#builderRepo", "https://github.com/me/builder/")
     page.fill("#token", "good-token")
     page.click("#saveSettings")
-    check("settings saved", page.inner_text("#settingsState") == "Saved")
+    # text_content: the section folds itself shortly after saving, which hides the text
+    check("settings saved", page.text_content("#settingsState") == "Saved")
     page.wait_for_function("document.getElementById('led').dataset.led === 'ready'")
     check("LED green when ready", page.inner_text("#ledText") == "Ready")
 
