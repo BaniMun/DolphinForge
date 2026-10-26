@@ -1322,11 +1322,18 @@
 
   function fileLink(f, mini) {
     const data = f.file ? ` data-file="${escapeHtml(f.file)}" data-tag="${escapeHtml(f.tag)}"` : "";
-    return `<a class="file${mini ? " mini" : ""}" href="${f.url}"${data} data-name="${escapeHtml(f.name)}" download="${escapeHtml(f.name)}">` +
+    const save = saveName(f.name);
+    return `<a class="file${mini ? " mini" : ""}" href="${f.url}"${data} data-name="${escapeHtml(save)}" download="${escapeHtml(save)}">` +
       `<span>${escapeHtml(f.name)}</span>${f.size ? `<small>${(f.size / 1024).toFixed(1)} KB</small>` : ""}` +
       `<span class="dl" aria-hidden="true"><svg viewBox="0 0 9 9" shape-rendering="crispEdges" fill="currentColor">` +
       `<rect x="3" y="0" width="3" height="5"/><rect x="1" y="4" width="7" height="1"/><rect x="2" y="5" width="5" height="1"/>` +
       `<rect x="3" y="6" width="3" height="1"/><rect x="4" y="7" width="1" height="1"/><rect x="0" y="8" width="9" height="1"/></svg></span></a>`;
+  }
+
+  // Saved file name: just the app id, as the Flipper shows it in its file
+  // list. The page still shows the firmware and version next to each file.
+  function saveName(name) {
+    return name.replace(/-(official|momentum|unleashed)-[^/]*\.fap$/, ".fap");
   }
 
   // "-latest" in a file name becomes the version it was actually built for.

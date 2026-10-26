@@ -231,7 +231,7 @@ with sync_playwright() as p:
     with page.expect_download() as dl:
         files.first.click()
     d = dl.value
-    check("downloads on the page", d.suggested_filename == "cfs_tag_writer-official-1.5.1.fap")
+    check("downloads on the page as <appid>.fap", d.suggested_filename == "cfs_tag_writer.fap")
     check("downloaded bytes", pathlib.Path(d.path()).read_bytes() == b"FAPDATA")
     check("file fetched raw from contents API", gh.asset_accept == "application/vnd.github.raw")
     check("stayed on DolphinForge", page.url.startswith("file://"))
@@ -239,7 +239,7 @@ with sync_playwright() as p:
     check("history has downloads", page.locator("#history .file").count() == 2)
     with page.expect_download() as dl2:
         page.locator("#history .file").first.click()
-    check("download from history", dl2.value.suggested_filename == "cfs_tag_writer-official-1.5.1.fap")
+    check("download from history", dl2.value.suggested_filename == "cfs_tag_writer.fap")
     first_rid = gh.dispatched["inputs"]["request_id"]
     page.locator("#history [data-again]").first.click()
     page.wait_for_function(f"document.querySelectorAll('#history .history-item').length === 2")
