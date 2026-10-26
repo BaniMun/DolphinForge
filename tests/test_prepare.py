@@ -95,5 +95,130 @@ ids = lambda form: {b.get("id") for b in form["body"]}
 check("feedback form fields", {"feedback", "device"} <= ids(forms["feedback.yml"]))
 check("build problem form fields", {"app", "firmware", "error", "run"} <= ids(forms["build-problem.yml"]))
 
+check("build request form fields", {"repo", "ref", "folder", "firmwares", "versions", "channel"} <= ids(forms["build-request.yml"]))
+check("build request form labels it", forms["build-request.yml"]["labels"] == ["build-request"])
+
+# ---- builds requested through issues (.github/workflows/issue-build.yml) ----
+dispatch_inputs = wf[True]["workflow_dispatch"]["inputs"]  # YAML reads "on" as True
+call_inputs = wf[True]["workflow_call"]["inputs"]
+check("build.yml callable with the same inputs", set(call_inputs) == set(dispatch_inputs))
+check("callable inputs are strings", all(v.get("type") == "string" for v in call_inputs.values()))
+
+iwf = yaml.safe_load((ROOT / ".github/workflows/issue-build.yml").read_text())
+ijobs = iwf["jobs"]
+check("issue workflow runs on opened issues", iwf[True] == {"issues": {"types": ["opened"]}})
+check("only for build-request issues", "build-request" in ijobs["accept"]["if"])
+check("accept job can only touch issues", ijobs["accept"]["permissions"] == {"issues": "write"})
+check("build reuses build.yml", ijobs["build"]["uses"] == "./.github/workflows/build.yml")
+check("build gets request id from issue", ijobs["build"]["with"]["request_id"] == "${{ needs.accept.outputs.request_id }}")
+check("report runs even if the build failed", "always()" in ijobs["report"]["if"])
+issue_env = ijobs["accept"]["steps"][0]["env"]
+check("issue text only through env", issue_env["ISSUE_BODY"] == "${{ github.event.issue.body }}"
+      and "github.event.issue.body" not in ijobs["accept"]["steps"][0]["run"])
+
+
+def script_of(step):
+    return step["run"].split("<<'EOF'\n", 1)[1].rsplit("EOF", 1)[0]
+
+
+FAKE_GH = """#!/usr/bin/env python3
+import json, os, sys
+args = sys.argv[1:]
+stdin = sys.stdin.read() if not sys.stdin.isatty() else ""
+with open(os.environ["FAKE_LOG"], "a") as log:
+    log.write(json.dumps({"args": args, "stdin": stdin}) + "\\n")
+if args[:1] == ["api"] and any("/issues" in a for a in args):
+    print(os.environ.get("FAKE_ISSUES", "[]"))
+elif args[:2] == ["release", "view"]:
+    assets = os.environ.get("FAKE_ASSETS")
+    if assets is None:
+        sys.exit(1)
+    print(json.dumps({"assets": json.loads(assets)}))
+"""
+
+
+def run_script(code_text, env_extra):
+    with tempfile.TemporaryDirectory() as d:
+        gh = pathlib.Path(d) / "gh"
+        gh.write_text(FAKE_GH)
+        gh.chmod(0o755)
+        log = pathlib.Path(d) / "log.jsonl"
+        log.write_text("")
+        out = pathlib.Path(d) / "out.txt"
+        out.write_text("")
+        env = dict(os.environ, PATH=f"{d}:{os.environ['PATH']}", FAKE_LOG=str(log), GITHUB_OUTPUT=str(out),
+                   GH_REPO="me/DolphinForge", ISSUE_NUMBER="42", AUTHOR="someone", RUN_URL="https://run/1",
+                   DAILY_LIMIT="5", **env_extra)
+        p = subprocess.run([sys.executable, "-I", "-c", code_text], env=env, capture_output=True, text=True,
+                           stdin=subprocess.DEVNULL, timeout=60)
+        outputs = dict(line.split("=", 1) for line in out.read_text().splitlines() if "=" in line)
+        calls = [json.loads(l) for l in log.read_text().splitlines()]
+    return p.returncode, outputs, calls, p.stderr
+
+
+accept = script_of(ijobs["accept"]["steps"][0])
+
+
+def form(repo="https://github.com/owner/app", ref="_No response_", folder="_No response_",
+         fws="official, momentum, unleashed", versions="_No response_", channel="release"):
+    return (f"### App repo\n\n{repo}\n\n### Branch or tag\n\n{ref}\n\n### App folder\n\n{folder}\n\n"
+            f"### Firmwares\n\n{fws}\n\n### Firmware versions\n\n{versions}\n\n### SDK channel\n\n{channel}\n")
+
+
+import datetime
+now = datetime.datetime.now(datetime.timezone.utc)
+recent = lambda n: json.dumps([{"created_at": (now - datetime.timedelta(hours=h + 1)).strftime("%Y-%m-%dT%H:%M:%SZ")}
+                               for h in range(n)])
+
+code, o, calls, err = run_script(accept, {"ISSUE_BODY": form(), "FAKE_ISSUES": recent(1)})
+check("issue form accepted", code == 0 and o.get("ok") == "true" and o.get("repo") == "https://github.com/owner/app")
+check("empty fields become empty", o.get("ref") == "" and o.get("app_dir") == "" and o.get("versions") == "")
+check("firmwares normalised", o.get("firmwares") == "official,momentum,unleashed")
+check("request id from issue number", o.get("request_id") == "issue-42")
+check("starts with a reply", any(c["args"][:2] == ["issue", "comment"] and "Building" in c["stdin"] for c in calls))
+check("issue stays open while building", not any(c["args"][:2] == ["issue", "close"] for c in calls))
+
+code, o, calls, _ = run_script(accept, {"ISSUE_BODY": form(repo="https://github.com/owner/app/tree/dev/apps/cfs",
+                                                          fws="Momentum", versions="momentum=mntm-010"),
+                                       "FAKE_ISSUES": recent(1)})
+check("tree link split into repo/ref/folder", (o.get("repo"), o.get("ref"), o.get("app_dir")) == ("owner/app", "dev", "apps/cfs"))
+check("chosen firmware and version", o.get("firmwares") == "momentum" and o.get("versions") == "momentum=mntm-010")
+
+code, o, calls, _ = run_script(accept, {"ISSUE_BODY": form(), "FAKE_ISSUES": recent(6)})
+check("6th build in a day refused", o.get("ok") == "false"
+      and any("limit of 5" in c["stdin"] for c in calls) and any(c["args"][:2] == ["issue", "close"] for c in calls))
+code, o, calls, _ = run_script(accept, {"ISSUE_BODY": form(), "FAKE_ISSUES": recent(5)})
+check("5th build in a day allowed", o.get("ok") == "true")
+old = json.dumps([{"created_at": (now - datetime.timedelta(days=2)).strftime("%Y-%m-%dT%H:%M:%SZ")}] * 9)
+code, o, calls, _ = run_script(accept, {"ISSUE_BODY": form(), "FAKE_ISSUES": old})
+check("older requests don't count", o.get("ok") == "true")
+code, o, calls, _ = run_script(accept, {"ISSUE_BODY": form(repo="_No response_"), "FAKE_ISSUES": "[]"})
+check("missing repo closes the issue", o.get("ok") == "false" and any(c["args"][:2] == ["issue", "close"] for c in calls))
+code, o, calls, _ = run_script(accept, {"ISSUE_BODY": form(repo="a/b; rm -rf /"), "FAKE_ISSUES": "[]"})
+check("odd repo text left for build.yml to reject", code == 0 and run(o.get("repo", ""))[0] != 0)
+
+report = script_of(ijobs["report"]["steps"][0])
+assets = json.dumps([{"name": "my_app-official-latest.fap", "url": "https://dl/o"},
+                     {"name": "my_app-momentum-latest.fap", "url": "https://dl/m"}])
+code, o, calls, err = run_script(report, {"TAG": "build-issue-42", "FIRMWARES": "official,momentum,unleashed",
+                                          "FAKE_ASSETS": assets})
+reply = next((c["stdin"] for c in calls if c["args"][:2] == ["issue", "comment"]), "")
+check("report lists the files", code == 0 and "[my_app-official-latest.fap](https://dl/o)" in reply and "| Momentum |" in reply)
+check("report names the firmware that failed", "Didn't build for: Unleashed" in reply)
+check("issue closed as completed", any(c["args"][:2] == ["issue", "close"] and "completed" in c["args"] for c in calls))
+code, o, calls, err = run_script(report, {"TAG": "build-issue-42", "FIRMWARES": "official"})
+reply = next((c["stdin"] for c in calls if c["args"][:2] == ["issue", "comment"]), "")
+check("no release: says it didn't build", code == 0 and "didn't build for any firmware" in reply
+      and any(c["args"][:2] == ["issue", "close"] and "not planned" in c["args"] for c in calls))
+
+# ---- daily cleanup (.github/workflows/cleanup.yml) ----
+cwf = yaml.safe_load((ROOT / ".github/workflows/cleanup.yml").read_text())
+check("cleanup runs daily", "schedule" in cwf[True] and "workflow_dispatch" in cwf[True])
+cjob = cwf["jobs"]["cleanup"]
+check("cleanup keeps 30 days", cjob["env"]["KEEP_DAYS"] == "30")
+crun = cjob["steps"][0]["run"]
+check("cleanup only touches build-* tags", 'startswith(\\"build-\\")' in crun and "^build-[A-Za-z0-9-]{6,64}$" in crun)
+check("cleanup removes the tag too", "--cleanup-tag" in crun)
+
 print(f"\n{'ALL PASSED' if not fails else f'{fails} FAILED'}")
 sys.exit(1 if fails else 0)

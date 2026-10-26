@@ -1,0 +1,46 @@
+name: Build an app
+description: Build a Flipper Zero app (.fap) for Official, Momentum and Unleashed. The files are posted here when they're ready.
+title: "Build: "
+labels: [build-request]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Fill in the app and press **Create**. DolphinForge builds it and replies in this issue with the .fap files, usually within a few minutes. Up to 5 builds per account per day.
+  - type: input
+    id: repo
+    attributes:
+      label: App repo
+      description: GitHub link to the app, e.g. https://github.com/owner/app (a /tree/branch/folder link works too).
+      placeholder: https://github.com/owner/app
+    validations:
+      required: true
+  - type: input
+    id: ref
+    attributes:
+      label: Branch or tag
+      description: Leave empty for the default branch.
+  - type: input
+    id: folder
+    attributes:
+      label: App folder
+      description: Folder with application.fam. Leave empty for the top folder.
+  - type: input
+    id: firmwares
+    attributes:
+      label: Firmwares
+      description: Any of official, momentum, unleashed, separated by commas.
+      value: official, momentum, unleashed
+    validations:
+      required: true
+  - type: input
+    id: versions
+    attributes:
+      label: Firmware versions
+      description: Leave empty for the latest. For older ones, e.g. momentum=mntm-010, official=1.3.4
+  - type: input
+    id: channel
+    attributes:
+      label: SDK channel
+      description: release (stable) or dev.
+      value: release

@@ -1,7 +1,8 @@
 name: DolphinForge build
 # Builds a Flipper Zero app (.fap) from any public GitHub repo for the chosen
 # firmwares and publishes the files as a GitHub Release tagged build-<request_id>.
-# Started by the web page (index.html) through the workflow_dispatch API.
+# Started by the web page (index.html) through the workflow_dispatch API, or
+# called by issue-build.yml for a build request opened as an issue.
 #
 # Security: the app being built is someone else's code. The build job has only
 # read access and no secrets; the single job allowed to write (create the
@@ -38,6 +39,43 @@ on:
       request_id:
         description: "Unique id set by the web page to find this run"
         required: true
+
+  # Also run by issue-build.yml for build requests opened as issues.
+  workflow_call:
+    inputs:
+      repo:
+        description: "Source repo: owner/name or https://github.com/owner/name"
+        required: true
+        type: string
+      ref:
+        description: "Branch, tag or commit (empty = default branch)"
+        required: false
+        type: string
+        default: ""
+      app_dir:
+        description: "Folder with application.fam (empty = repo root)"
+        required: false
+        type: string
+        default: ""
+      firmwares:
+        description: "Comma list: official,momentum,unleashed"
+        required: false
+        type: string
+        default: "official,momentum,unleashed"
+      channel:
+        description: "SDK channel: release or dev"
+        required: false
+        type: string
+        default: "release"
+      versions:
+        description: "Archived versions, e.g. official=1.3.4,momentum=mntm-010 (missing = latest)"
+        required: false
+        type: string
+        default: ""
+      request_id:
+        description: "Unique id set by the web page to find this run"
+        required: true
+        type: string
 
 permissions: {}
 

@@ -6,6 +6,7 @@ import base64
 import io
 import json
 import pathlib
+import urllib.parse
 import re
 import sys
 import tempfile
@@ -170,12 +171,10 @@ with sync_playwright() as p:
     fb = page.get_attribute("#feedbackLink", "href")
     check("feedback opens an issue form", fb.startswith("https://github.com/BaniMun/DolphinForge/issues/new?template=feedback.yml"))
     check("hidden from search engines", "noindex" in (page.get_attribute("meta[name=robots]", "content") or ""))
-    check("settings open when empty", page.locator("#setupDetails").get_attribute("open") is not None)
-    page.wait_for_function("document.getElementById('led').dataset.led === 'error'")
-    check("LED red without token", "repo and token" in page.inner_text("#ledText"))
+    check("own-fork settings folded for visitors", page.locator("#setupDetails").get_attribute("open") is None)
+    page.wait_for_function("document.getElementById('led').dataset.led === 'ready'")
+    check("ready without a token", page.inner_text("#ledText") == "Ready")
     page.fill("#repo", "owner/app")
-    page.click("#buildBtn")
-    check("asks for settings first", "Repo and token" in page.inner_text("#formMsg"))
     page.wait_for_function("document.querySelector('.fw-ver[data-fw=momentum]').options.length > 1")
     opts = page.eval_on_selector_all(".fw-ver[data-fw=official] option", "els => els.map(e => e.textContent)")
     check("official latest from releases", opts == ["Latest (1.5.1)", "1.4.3"])
@@ -195,6 +194,26 @@ with sync_playwright() as p:
     check("stable hint back", "official releases" in page.inner_text("#verHint"))
     page.click("#moreOpts summary")  # fold the options back up
     page.select_option(".fw-ver[data-fw=momentum]", "mntm-010")
+
+    # --- no token: Build opens a filled-in build request issue ---
+    page.evaluate("window.open = (u) => { window._opened = u; return null; }")
+    page.click("#buildBtn")
+    opened = page.evaluate("window._opened") or ""
+    q = urllib.parse.parse_qs(urllib.parse.urlsplit(opened).query)
+    one = lambda k: (q.get(k) or [""])[0]
+    check("request goes to the DolphinForge issue form",
+          opened.startswith("https://github.com/BaniMun/DolphinForge/issues/new") and one("template") == "build-request.yml")
+    check("request carries the app", one("repo") == "https://github.com/owner/app" and one("title").startswith("Build: owner/app"))
+    check("request carries firmwares and versions", one("firmwares") == "official, momentum, unleashed"
+          and "momentum=mntm-010" in one("versions") and one("channel") == "release")
+    check("request explained on the page", "Press Create" in page.inner_text("#formMsg") and gh.dispatched is None)
+    page.click("#srcUploadBtn")
+    page.click("#buildBtn")
+    check("upload needs your own fork", "own fork" in page.inner_text("#formMsg")
+          and page.locator("#setupDetails").get_attribute("open") is not None)
+    page.click("#srcGithubBtn")
+
+    page.evaluate("document.getElementById('setupDetails').open = true")
 
     page.fill("#builderRepo", "https://github.com/me/builder/")
     page.fill("#token", "good-token")
@@ -285,6 +304,7 @@ with sync_playwright() as p:
     page = ctx.new_page()
     page.route("https://api.github.com/**", FakeGitHub().handle)
     page.goto(PAGE)
+    page.evaluate("document.getElementById('setupDetails').open = true")
     page.fill("#builderRepo", "me/builder")
     page.fill("#token", "wrong")
     page.click("#saveSettings")
@@ -355,6 +375,7 @@ with sync_playwright() as p:
         pg.route("https://api.github.com/**", fake.handle)
         pg.add_init_script("const _st = window.setTimeout; window.setTimeout = (f, ms, ...a) => _st(f, Math.min(ms || 0, 20), ...a);")
         pg.goto(PAGE)
+        pg.evaluate("document.getElementById('setupDetails').open = true")
         pg.fill("#builderRepo", "me/builder")
         pg.fill("#token", "good-token")
         pg.click("#saveSettings")
@@ -493,6 +514,7 @@ with sync_playwright() as p:
     page = ctx.new_page()
     page.route("https://api.github.com/**", FakeGitHub().handle)
     page.goto(PAGE)
+    page.evaluate("document.getElementById('setupDetails').open = true")
     page.fill("#builderRepo", "me/builder")
     page.fill("#token", "good-token")
     page.click("#saveSettings")

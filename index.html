@@ -487,8 +487,9 @@
 
     <hr class="rule">
     <details id="setupDetails" class="setup">
-      <summary>Repo and token</summary>
-      <label for="builderRepo">Your DolphinForge repo</label>
+      <summary>Build in your own fork</summary>
+      <p class="hint">Optional. Without it, Build opens a request on GitHub and the files are posted there. With your own fork of DolphinForge and a token, builds run in your fork, with live progress and downloads on this page, and you can upload files.</p>
+      <label for="builderRepo">Your DolphinForge fork</label>
       <input type="text" id="builderRepo" placeholder="login/DolphinForge" spellcheck="false" autocapitalize="off">
       <label for="token">GitHub token</label>
       <input type="password" id="token" placeholder="github_pat_…" spellcheck="false" autocapitalize="off">
@@ -581,6 +582,22 @@
     return `https://github.com/${FEEDBACK_REPO}/issues/new?${q}`;
   }
 
+  // Build without a token: open the "Build an app" issue form, filled in. The
+  // issue workflow builds the app and replies in the issue with the files.
+  function requestOnGitHub({ repo, ref, dir, fws, channel, versions }) {
+    const url = issueUrl("build-request.yml", {
+      title: `Build: ${repo}${ref ? " @ " + ref : ""}`,
+      repo: `https://github.com/${repo}`,
+      ref, folder: dir,
+      firmwares: fws.join(", "),
+      versions: Object.entries(versions).map(([fw, v]) => `${fw}=${v}`).join(", "),
+      channel,
+    });
+    window.open(url, "_blank", "noopener");
+    $("lcdIdle").querySelector(".idle-line").textContent = "Press Create on GitHub. The files will be posted in that issue.";
+    showMsg($("formMsg"), "A build request opened on GitHub in a new tab. Press Create there; you'll get the files in that issue, usually within a few minutes.", true);
+  }
+
   function problemUrl(build, fw, job) {
     const app = build.upload ? `uploaded files (${build.label || "app"})`
       : `${build.repo}${build.ref ? " @ " + build.ref : ""}${build.dir ? ", folder " + build.dir : ""}`;
@@ -609,9 +626,15 @@
     $("led").setAttribute("aria-label", text);
     $("ledText").textContent = text;
   }
+  // Without a fork and token, builds are requested as GitHub issues (see
+  // .github/workflows/issue-build.yml); with them, they run in the fork.
+  function ownFork() {
+    return !!(settings.builderRepo && settings.token);
+  }
+
   async function checkReady() {
     if (busy) return;
-    if (!settings.builderRepo || !settings.token) return setLed("error", "Add your repo and token below");
+    if (!ownFork()) return setLed("ready", "Ready");
     setLed("off", "Checking…");
     try {
       await gh(`/repos/${settings.builderRepo}`);
@@ -633,7 +656,6 @@
   let settings = { builderRepo: store.get("builderRepo", "") || guessBuilderRepo(), token: store.get("token", "") };
   $("builderRepo").value = settings.builderRepo;
   $("token").value = settings.token;
-  if (!settings.builderRepo || !settings.token) $("setupDetails").open = true;
 
   $("saveSettings").addEventListener("click", () => {
     settings.builderRepo = $("builderRepo").value.trim().replace(/^https?:\/\/github\.com\//, "").replace(/\/+$/, "");
@@ -675,9 +697,9 @@
   }
 
   function explain(err) {
-    if (err.status === 401) return "The token is invalid or expired. Paste a new one under Repo and token.";
+    if (err.status === 401) return "The token is invalid or expired. Paste a new one under Build in your own fork.";
     if (err.status === 403) return "The token can't start builds. It needs Actions set to read and write and Contents set to read-only, or the GitHub rate limit was hit.";
-    if (err.status === 404) return "Can't find your DolphinForge repo or its build workflow. Check the repo name under Repo and token.";
+    if (err.status === 404) return "Can't find your DolphinForge fork or its build workflow. Check the repo name under Build in your own fork.";
     if (err.status === 422) return "GitHub rejected the request: " + err.message;
     return err.message || String(err);
   }
@@ -1098,9 +1120,9 @@
   $("buildForm").addEventListener("submit", async (e) => {
     e.preventDefault();
     showMsg($("formMsg"), "");
-    if (!settings.builderRepo || !settings.token) {
+    if (!ownFork() && source === "upload") {
       $("setupDetails").open = true;
-      return showMsg($("formMsg"), "Add your repo and token under Repo and token first.");
+      return showMsg($("formMsg"), "Uploading files needs your own fork: set it up under Build in your own fork, or use a GitHub link.");
     }
     const requestId = Date.now().toString(36) + "-" + Math.random().toString(36).slice(2, 8);
     let repo, ref, dir, label;
@@ -1137,6 +1159,8 @@
         if (!versions[fw] && list && list.length) latest[fw] = list[0];
       });
     }
+    if (!ownFork()) return requestOnGitHub({ repo, ref, dir, fws, channel, versions });
+
     const build = {
       id: requestId, repo, ref, dir, fws, channel, versions, label, latest,
       upload: source === "upload", started: Date.now(), runId: null, state: "queued",

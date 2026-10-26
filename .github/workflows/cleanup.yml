@@ -1,0 +1,39 @@
+name: Remove old builds
+# Every day, delete build releases (and their build-* tags) older than 30
+# days. Each tag points at a commit holding only that build's .fap files, so
+# those go too once the tag is gone. Can also be started by hand.
+
+on:
+  schedule:
+    - cron: "17 3 * * *"
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: cleanup
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      KEEP_DAYS: "30"
+    steps:
+      - name: Delete builds older than ${{ env.KEEP_DAYS }} days
+        run: |
+          cutoff=$(date -u -d "-${KEEP_DAYS} days" +%Y-%m-%dT%H:%M:%SZ)
+          echo "Deleting build-* releases created before $cutoff"
+          gh api --paginate "repos/${GH_REPO}/releases?per_page=100" \
+            --jq ".[] | select(.tag_name | startswith(\"build-\")) | select(.created_at < \"$cutoff\") | .tag_name" \
+            > old.txt
+          count=0
+          while read -r tag; do
+            [[ "$tag" =~ ^build-[A-Za-z0-9-]{6,64}$ ]] || continue
+            gh release delete "$tag" --cleanup-tag --yes && count=$((count + 1))
+          done < old.txt
+          echo "Deleted $count build(s)."

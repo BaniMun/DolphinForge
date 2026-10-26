@@ -1,0 +1,183 @@
+name: DolphinForge build request
+# Builds an app for anyone, without a token: the web page opens a prefilled
+# "Build an app" issue form, the person submits it with their own GitHub
+# account, and this workflow builds the app with build.yml and replies in the
+# issue with the .fap files.
+#
+# Security: the issue text is untrusted. It is only read from environment
+# variables by Python, and everything taken from it is validated again by
+# build.yml's prepare job before any code is checked out. Building runs with
+# read-only access and no secrets, as for builds from the page.
+
+run-name: "request #${{ github.event.issue.number }} by ${{ github.event.issue.user.login }}"
+
+on:
+  issues:
+    types: [opened]
+
+permissions: {}
+
+concurrency:
+  group: request-${{ github.event.issue.number }}
+
+env:
+  DAILY_LIMIT: "5"
+
+jobs:
+  accept:
+    if: contains(github.event.issue.labels.*.name, 'build-request')
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    permissions:
+      issues: write
+    outputs:
+      ok: ${{ steps.parse.outputs.ok }}
+      repo: ${{ steps.parse.outputs.repo }}
+      ref: ${{ steps.parse.outputs.ref }}
+      app_dir: ${{ steps.parse.outputs.app_dir }}
+      firmwares: ${{ steps.parse.outputs.firmwares }}
+      versions: ${{ steps.parse.outputs.versions }}
+      channel: ${{ steps.parse.outputs.channel }}
+      request_id: ${{ steps.parse.outputs.request_id }}
+    steps:
+      - name: Read the form
+        id: parse
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          ISSUE_BODY: ${{ github.event.issue.body }}
+          ISSUE_NUMBER: ${{ github.event.issue.number }}
+          AUTHOR: ${{ github.event.issue.user.login }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          python3 - <<'EOF'
+          import datetime, json, os, re, subprocess, sys
+
+          def gh(*args, data=None):
+              return subprocess.run(["gh", *args], input=data, capture_output=True, text=True, check=True).stdout
+
+          def reply(text, close=False):
+              gh("issue", "comment", os.environ["ISSUE_NUMBER"], "--body-file", "-", data=text)
+              if close:
+                  gh("issue", "close", os.environ["ISSUE_NUMBER"], "--reason", "not planned")
+
+          def output(**kv):
+              with open(os.environ["GITHUB_OUTPUT"], "a") as out:
+                  for k, v in kv.items():
+                      out.write(f"{k}={v}\n")
+
+          # Issue forms post "### <label>" sections; empty fields read "_No response_".
+          fields = {}
+          for block in re.split(r"^### ", os.environ.get("ISSUE_BODY", ""), flags=re.M)[1:]:
+              label, _, value = block.partition("\n")
+              value = value.strip()
+              fields[label.strip()] = "" if value == "_No response_" else value.splitlines()[0].strip() if value else ""
+
+          def field(label):
+              return fields.get(label, "").replace("`", "").strip()
+
+          repo = field("App repo")
+          ref = field("Branch or tag")
+          folder = field("App folder")
+          # A /tree/<branch>/<folder> link fills in branch and folder when they're empty.
+          m = re.match(r"^(?:https?://)?(?:www\.)?github\.com/([^/\s]+/[^/\s]+?)(?:\.git)?/tree/([^/\s]+)(?:/(\S+?))?/?$", repo)
+          if m:
+              repo = m.group(1)
+              ref = ref or m.group(2)
+              folder = folder or (m.group(3) or "")
+          if not repo:
+              reply("Please add the app's GitHub link in **App repo** and open a new request.", close=True)
+              output(ok="false")
+              sys.exit(0)
+
+          # Daily limit per account, counting this request. (The issues list is
+          # up to date at once; search can lag behind new issues.)
+          since = (datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(days=1)).strftime("%Y-%m-%dT%H:%M:%SZ")
+          mine = json.loads(gh("api", "-X", "GET", f"repos/{os.environ['GH_REPO']}/issues",
+                               "-f", f"creator={os.environ['AUTHOR']}", "-f", "labels=build-request",
+                               "-f", "state=all", "-f", f"since={since}", "-f", "per_page=100"))
+          count = sum(1 for i in mine if i["created_at"] >= since)
+          limit = int(os.environ["DAILY_LIMIT"])
+          if count > limit:
+              reply(f"You've reached the limit of {limit} builds per day. Please try again tomorrow, "
+                    "or build in your own fork of DolphinForge (see the README).", close=True)
+              output(ok="false")
+              sys.exit(0)
+
+          firmwares = ",".join(f.strip().lower() for f in re.split(r"[,\s]+", field("Firmwares")) if f.strip())
+          versions = ",".join(v.strip() for v in re.split(r"[,\s]+", field("Firmware versions")) if v.strip())
+          output(ok="true", repo=repo, ref=ref, app_dir=folder,
+                 firmwares=firmwares or "official,momentum,unleashed",
+                 versions=versions, channel=(field("SDK channel").lower() or "release"),
+                 request_id=f"issue-{os.environ['ISSUE_NUMBER']}")
+          reply(f"Building **{repo}**{' @ ' + ref if ref else ''}{', folder ' + folder if folder else ''} "
+                f"for {firmwares or 'official, momentum, unleashed'}. "
+                f"You'll get the files here in a few minutes. Progress: {os.environ['RUN_URL']}")
+          EOF
+
+  build:
+    needs: accept
+    if: needs.accept.outputs.ok == 'true'
+    permissions:
+      contents: write
+    uses: ./.github/workflows/build.yml
+    with:
+      repo: ${{ needs.accept.outputs.repo }}
+      ref: ${{ needs.accept.outputs.ref }}
+      app_dir: ${{ needs.accept.outputs.app_dir }}
+      firmwares: ${{ needs.accept.outputs.firmwares }}
+      versions: ${{ needs.accept.outputs.versions }}
+      channel: ${{ needs.accept.outputs.channel }}
+      request_id: ${{ needs.accept.outputs.request_id }}
+
+  report:
+    needs: [accept, build]
+    if: ${{ always() && needs.accept.outputs.ok == 'true' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    permissions:
+      issues: write
+      contents: read
+    steps:
+      - name: Post the files
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          ISSUE_NUMBER: ${{ github.event.issue.number }}
+          TAG: build-${{ needs.accept.outputs.request_id }}
+          FIRMWARES: ${{ needs.accept.outputs.firmwares }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          python3 - <<'EOF'
+          import json, os, subprocess
+
+          def gh(*args, data=None, check=True):
+              return subprocess.run(["gh", *args], input=data, capture_output=True, text=True, check=check)
+
+          labels = {"official": "Official", "momentum": "Momentum", "unleashed": "Unleashed"}
+          res = gh("release", "view", os.environ["TAG"], "--json", "assets", check=False)
+          assets = json.loads(res.stdout)["assets"] if res.returncode == 0 else []
+          lines, built = [], set()
+          for a in sorted(assets, key=lambda a: a["name"]):
+              fw = next((f for f in labels if f"-{f}-" in a["name"]), "")
+              built.add(fw)
+              lines.append(f"| {labels.get(fw, '?')} | [{a['name']}]({a['url']}) |")
+          wanted = [f for f in os.environ["FIRMWARES"].split(",") if f]
+          failed = [labels.get(f, f) for f in wanted if f not in built]
+
+          if lines:
+              text = ["Your app is ready:", "", "| Firmware | File |", "|---|---|", *lines, "",
+                      "Copy the file for your firmware to `apps/` on the SD card (with qFlipper or the Flipper app). "
+                      "You can rename it to just the app name, e.g. `my_app.fap`."]
+              if failed:
+                  text += ["", f"Didn't build for: {', '.join(failed)}. Details: {os.environ['RUN_URL']}"]
+              text += ["", "Files are kept for 30 days."]
+              reason = "completed"
+          else:
+              text = ["The app didn't build for any firmware.", "",
+                      f"The log shows what went wrong: {os.environ['RUN_URL']}",
+                      "If you think it's a DolphinForge problem, open a **Build problem** issue."]
+              reason = "not planned"
+          gh("issue", "comment", os.environ["ISSUE_NUMBER"], "--body-file", "-", data="\n".join(text))
+          gh("issue", "close", os.environ["ISSUE_NUMBER"], "--reason", reason)
+          EOF
